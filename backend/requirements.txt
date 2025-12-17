@@ -1,0 +1,36 @@
+# Home Guard Backend - Python Dependencies
+
+# FastAPI Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Pydantic for data validation
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# LangChain (for classification only, no LangGraph)
+langchain-openai>=0.0.5
+langchain-core>=0.1.16
+
+# Azure Services
+openai>=1.10.0  # Azure OpenAI SDK
+azure-identity>=1.15.0
+azure-core>=1.29.7
+azure-cosmos>=4.5.1  # Azure Cosmos DB SDK
+azure-ai-projects>=1.0.0  # Azure AI Foundry SDK
+
+# HTTP Client
+aiohttp>=3.9.1
+requests>=2.31.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Utilities
+python-dateutil>=2.8.2
+
+# Development Dependencies
+pytest>=7.4.4
+pytest-asyncio>=0.23.3
+httpx>=0.26.0  # For testing async endpoints

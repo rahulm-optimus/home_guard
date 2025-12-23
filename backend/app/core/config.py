@@ -45,12 +45,16 @@ class Settings(BaseSettings):
     AZURE_TENANT_ID: Optional[str] = None
     AZURE_AI_PROJECT_ENDPOINT: str = "https://aif-home-inspection-ai-dev-wu-01.services.ai.azure.com/api/projects/proj-home-inspection-ai-dev-wu-01"
     AZURE_AI_AGENT_ID: str = "asst_DIzNuZfJv2qblsqPnySbyzde"
+    AZURE_CHAT_AGENT_ID: str = "asst_BFZt4Wu3VmOom3rzXuufpg8I"
     AZURE_AI_MODEL_DEPLOYMENT_NAME: str = "gpt-4o"
     BING_PROJECT_CONNECTION_ID: str = "/subscriptions/e10b341a-ea6d-42ef-80a4-5d430deb0782/resourceGroups/OptimusRG/providers/Microsoft.CognitiveServices/accounts/aif-home-inspection-ai-dev-wu-01/projects/proj-home-inspection-ai-dev-wu-01/connections/gbscostestimatordev01"
     
     # Agent Feature Flags
     AZURE_AGENT_USE_BING: bool = True
     AZURE_AGENT_CHECK_DB_FIRST: bool = True
+    
+    # Server Configuration
+    PORT: int = 5000
     
     class Config:
         env_file = ".env"

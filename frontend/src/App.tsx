@@ -21,10 +21,12 @@ import {
   Dashboard as DashboardIcon,
   AttachMoney as MoneyIcon,
   Storage as StorageIcon,
+  Chat as ChatIcon,
   Menu as MenuIcon,
 } from '@mui/icons-material';
 import CostEstimation from './pages/CostEstimation';
 import SavedItems from './pages/SavedItems';
+import ChatEstimation from './pages/ChatEstimation';
 import NotFound from './pages/NotFound';
 import ErrorBoundary from './components/ErrorBoundary';
 import logo from './assets/homeguard-incorporated-logo.png';
@@ -175,6 +177,7 @@ const theme = createTheme({
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
   { text: 'Cost Estimation', icon: <MoneyIcon />, path: '/estimation' },
+  { text: 'Chatbot', icon: <ChatIcon />, path: '/chatbot' },
   { text: 'Saved Items', icon: <StorageIcon />, path: '/saved-items' },
 ];
 
@@ -400,6 +403,7 @@ function App() {
             <Routes>
               <Route path="/" element={<DashboardHome />} />
               <Route path="/estimation" element={<CostEstimation />} />
+              <Route path="/chatbot" element={<ChatEstimation />} />
               <Route path="/saved-items" element={<SavedItems />} />
               <Route path="/404" element={<NotFound />} />
               <Route path="*" element={<Navigate to="/404" replace />} />

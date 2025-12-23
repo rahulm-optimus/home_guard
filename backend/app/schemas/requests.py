@@ -18,7 +18,7 @@ class EstimateQueryInput(BaseModel):
     query: list[str] = Field(..., min_items=1, description="List of items to estimate")
     category: str = Field(..., description="Category for all items")
     zipcode: str = Field(..., min_length=5, max_length=10, description="Zipcode for location-based estimates")
-    address: str = Field(..., description="Full address for location-based estimates")
+    # address: str = Field(..., description="Full address for location-based estimates")  # COMMENTED OUT - Testing removal
     username: str = Field(..., description="Username/owner of the inspection")
 
 
@@ -81,7 +81,7 @@ class EstimateItemResponse(BaseModel):
     items: list[ItemDetail] = Field(..., description="List of item details")
     dateofcreation: str = Field(..., description="Date of creation (YYYY-MM-DD)")
     zipcode: str = Field(..., description="Zipcode")
-    address: str = Field(..., description="Full address")
+    # address: str = Field(..., description="Full address")  # COMMENTED OUT - Testing removal
     username: str = Field(..., description="Username/owner")
 
 
@@ -126,7 +126,7 @@ class SaveItemInput(BaseModel):
     items: list[ItemDetail] = Field(..., description="List of item details")
     dateofcreation: str = Field(..., description="Date of creation (YYYY-MM-DD)")
     zipcode: str = Field(..., description="Zipcode (partition key)")
-    address: str = Field(..., description="Full address")
+    # address: str = Field(..., description="Full address")  # COMMENTED OUT - Testing removal
     username: str = Field(..., description="Username/owner")
     status: str = Field(default="pending", description="Item status")
     

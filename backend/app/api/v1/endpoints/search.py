@@ -28,7 +28,7 @@ class SearchResponse(BaseModel):
 # ----------- Endpoint -----------
 
 @router.post(
-    "/test-agent",
+    "/general-search-agent",
     response_model=SearchResponse,
     summary="Test Azure AI Agent Search"
 )

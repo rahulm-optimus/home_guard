@@ -12,7 +12,6 @@ import {
     Card,
     CardContent,
     Grid,
-    Divider,
     Chip,
 } from '@mui/material';
 import { Save as SaveIcon, Cancel as CancelIcon } from '@mui/icons-material';
@@ -90,14 +89,14 @@ const ReviewEstimateForm: React.FC<ReviewEstimateFormProps> = ({
                             {estimateData.dateofcreation}
                         </Typography>
                     </Grid>
-                    <Grid item xs={12}>
+                    {/* <Grid item xs={12}>
                         <Typography variant="caption" color="text.secondary">
                             Address
                         </Typography>
                         <Typography variant="body1" sx={{ fontWeight: 500 }}>
                             {estimateData.address}
                         </Typography>
-                    </Grid>
+                    </Grid> */}
                 </Grid>
             </Paper>
 

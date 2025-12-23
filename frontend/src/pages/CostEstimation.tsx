@@ -22,8 +22,6 @@ import {
   Stepper,
   Step,
   StepLabel,
-  Card,
-  CardContent,
   Divider,
   Grid,
 } from '@mui/material';
@@ -31,8 +29,6 @@ import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Send as SendIcon,
-  Edit as EditIcon,
-  Save as SaveIcon,
   CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import { estimateService } from '../services/estimate.service';
@@ -40,11 +36,7 @@ import { EstimationFormData, ItemDetail } from '../types/api.types';
 import ReviewEstimateForm from '../components/ReviewEstimateForm';
 
 const CATEGORIES = [
-  'Home inspection',
-  'Termite inspection',
-  'Roof inspection',
-  'Sewer inspection',
-  'NHD Inspection',
+  'Home inspection'
 ];
 
 const steps = ['Enter Details', 'Review Estimates', 'Saved'];
@@ -58,7 +50,7 @@ const CostEstimation: React.FC = () => {
     items: [''],
     category: 'Home inspection',
     zipcode: '',
-    address: '',
+    // address: '',  // COMMENTED OUT - Testing removal
     username: '',
   });
 
@@ -113,10 +105,10 @@ const CostEstimation: React.FC = () => {
       setError('Please enter a valid zipcode (minimum 5 characters)');
       return;
     }
-    if (!formData.address || !formData.address.trim()) {
-      setError('Please enter the property address');
-      return;
-    }
+    // if (!formData.address || !formData.address.trim()) {  // COMMENTED OUT - Testing removal
+    //   setError('Please enter the property address');
+    //   return;
+    // }
     if (!formData.username || !formData.username.trim()) {
       setError('Please enter your username');
       return;
@@ -133,7 +125,7 @@ const CostEstimation: React.FC = () => {
         query: validItems,
         category: formData.category,
         zipcode: formData.zipcode.trim(),
-        address: formData.address.trim(),
+        // address: formData.address.trim(),  // COMMENTED OUT - Testing removal
         username: formData.username.trim(),
       });
 
@@ -199,7 +191,7 @@ const CostEstimation: React.FC = () => {
             items: editableItems,
             dateofcreation: estimateData.dateofcreation,
             zipcode: estimateData.zipcode,
-            address: estimateData.address,
+            // address: estimateData.address,  // COMMENTED OUT - Testing removal
             username: estimateData.username,
             status: 'approved',
           },
@@ -237,7 +229,7 @@ const CostEstimation: React.FC = () => {
       items: [''],
       category: 'Home inspection',
       zipcode: '',
-      address: '',
+      // address: '',  // COMMENTED OUT - Testing removal
       username: '',
     });
     setCurrentItem('');
@@ -327,7 +319,7 @@ const CostEstimation: React.FC = () => {
             </Grid>
 
             {/* Address */}
-            <Grid item xs={12} md={6}>
+            {/* <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="Address *"
@@ -335,7 +327,7 @@ const CostEstimation: React.FC = () => {
                 onChange={(e) => handleFieldChange('address', e.target.value)}
                 placeholder="Enter full address"
               />
-            </Grid>
+            </Grid> */}
           </Grid>
 
           {/* Inspection Items Section - Full Width Outside Grid */}

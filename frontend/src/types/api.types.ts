@@ -19,7 +19,7 @@ export interface EstimateQueryInput {
   query: string[];
   category: string;
   zipcode: string;
-  address: string;
+  // address: string;  // COMMENTED OUT - Testing removal
   username: string;
 }
 
@@ -28,7 +28,7 @@ export interface EstimateItemResponse {
   items: ItemDetail[];
   dateofcreation: string;
   zipcode: string;
-  address: string;
+  // address: string;  // COMMENTED OUT - Testing removal
   username: string;
 }
 
@@ -47,7 +47,7 @@ export interface SaveItemInput {
   items: ItemDetail[];
   dateofcreation: string;
   zipcode: string;
-  address: string;
+  // address: string;  // COMMENTED OUT - Testing removal
   username: string;
   status: string;
 }
@@ -90,7 +90,7 @@ export interface EstimationFormData {
   items: string[];
   category: string;
   zipcode: string;
-  address: string;
+  // address: string;  // COMMENTED OUT - Testing removal
   username: string;
 }
 

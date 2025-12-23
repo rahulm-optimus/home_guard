@@ -16,7 +16,7 @@ export const estimateService = {
    */
   async getEstimate(data: EstimateQueryInput): Promise<EstimateResponse> {
     // const response = await axiosInstance.post<EstimateResponse>('/api/v1/estimate', data);
-    const response = await axiosInstance.post<EstimateResponse>('/api/v1/test-estimate', data);
+    const response = await axiosInstance.post<EstimateResponse>('/api/v1/cost-estimate', data);
     return response.data;
   },
 

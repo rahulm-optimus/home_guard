@@ -19,10 +19,10 @@ import {
   Alert,
   Card,
   CardContent,
-  Grid,
   Divider,
   IconButton,
   Collapse,
+  Grid,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -199,12 +199,12 @@ const SavedItems: React.FC = () => {
                           <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 3, bgcolor: '#fafafa' }}>
                               <Grid container spacing={2} sx={{ mb: 3 }}>
-                                <Grid item xs={12}>
+                                {/* <Grid item xs={12}>
                                   <Typography variant="subtitle2" color="text.secondary">
                                     Address
                                   </Typography>
                                   <Typography variant="body1">{item.address}</Typography>
-                                </Grid>
+                                </Grid> */}
                               </Grid>
 
                               <Divider sx={{ my: 2 }} />

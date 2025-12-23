@@ -21,11 +21,7 @@ logger = logging.getLogger(__name__)
 # Category mappings
 CATEGORIES = {
     "Home inspection": ["Structure", "Roofing", "Exterior", "Electrical", "Heating System", 
-                        "Cooling/Heat Pump System", "Insulation/Ventilation", "Plumbing", "Interior", "Pool/Spa"],
-    "Termite inspection": ["Insect related findings", "Fungus damage", "Wood destroying organisms"],
-    "Roof inspection": ["Roof related findings"],
-    "Sewer inspection": ["Sewer related findings"],
-    "NHD Inspection": ["NHD related findings"]
+                        "Cooling/Heat Pump System", "Insulation/Ventilation", "Plumbing", "Interior", "Pool/Spa"]
 }
 
 
@@ -55,9 +51,9 @@ class AzureAgentService:
         items: List[str],
         category: str,
         zipcode: str,
-        address: str,
-        username: str,
-        use_bing: Optional[bool] = None
+        # address: str,  # COMMENTED OUT - Testing removal
+        username: str
+        # use_bing: Optional[bool] = None  # COMMENTED OUT - Testing removal
     ) -> Dict[str, Any]:
         """
         Main entry point - process entire estimate request
@@ -82,7 +78,7 @@ class AzureAgentService:
         # If a specific subcategory was provided, use it as default
         default_subcat = specific_subcat if specific_subcat else subcategories[0]
         
-        enable_bing = use_bing if use_bing is not None else settings.AZURE_AGENT_USE_BING
+        # enable_bing = use_bing if use_bing is not None else settings.AZURE_AGENT_USE_BING  # COMMENTED OUT - Testing removal
         
         # Build prompt with all items
         items_text = "\n".join([f"{i+1}. {item}" for i, item in enumerate(items)])
@@ -96,7 +92,7 @@ Subcategories available: {', '.join(subcategories)}
 Repair Items:
 {items_text}
 
-{"Use Bing search to find current market rates for repairs in this area." if enable_bing else "Use your knowledge to estimate repair costs."}
+Use your knowledge to estimate repair costs.
 
 Respond with ONLY a JSON array containing exactly {len(items)} objects. Each object must have:
 - description: the repair item description
@@ -117,13 +113,15 @@ Return ONLY the JSON array."""
             # Single agent call
             agent = self.client.agents.get_agent(self.agent_id)
             thread = self.client.agents.threads.create()
+            logger.info(f"Sending prompt to agent: {prompt}")
             self.client.agents.messages.create(thread_id=thread.id, role="user", content=prompt)
             
             # Run agent
-            if enable_bing:
-                run = self.client.agents.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
-            else:
-                run = self.client.agents.runs.create_and_process(thread_id=thread.id, agent_id=agent.id, tools=[])
+            # if enable_bing:  # COMMENTED OUT - Testing removal
+            #     run = self.client.agents.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)
+            # else:
+            #     run = self.client.agents.runs.create_and_process(thread_id=thread.id, agent_id=agent.id, tools=[])
+            run = self.client.agents.runs.create_and_process(thread_id=thread.id, agent_id=agent.id)  # Using default agent tools
             
             if run.status == "failed":
                 elapsed_time = time.time() - start_time
@@ -152,7 +150,7 @@ Return ONLY the JSON array."""
             
             # Parse and format response
             return self._format_response(response, items, category, default_subcat, 
-                                        zipcode, address, username, enable_bing, start_time)
+                                        zipcode, username, start_time)
             
         except Exception as e:
             elapsed_time = time.time() - start_time
@@ -165,7 +163,7 @@ Return ONLY the JSON array."""
             )
     
     def _format_response(self, agent_response: str, items: List[str], category: str, 
-                        default_subcat: str, zipcode: str, address: str, username: str, bing: bool, start_time: float) -> Dict[str, Any]:
+                        default_subcat: str, zipcode: str, username: str, start_time: float) -> Dict[str, Any]:
         """Parse agent response and format for API"""
         try:
             # Extract JSON array with improved parsing
@@ -256,11 +254,11 @@ Return ONLY the JSON array."""
                 description = items[i] if i < len(items) else item_data.get("description", "")
                 # Compose a 2-line note with zipcode, area, and reason
                 agent_note = item_data.get("note", "").strip()
-                location_info = f"Zipcode: {zipcode}, Area: {address}"
+                location_info = f"Zipcode: {zipcode}"
                 if not agent_note:
                     agent_note = "Estimated for this area based on local rates."
                 # Compose the note: agent's note + location, max 2 lines
-                # note = f"[{'Bing' if bing else 'AI'}] {agent_note} ({location_info})"
+                # note = f"[{'Bing' if bing else 'AI'}] {agent_note} ({location_info})"  # COMMENTED OUT - bing param removed
                 note = f"{agent_note} ({location_info})"
                 # Ensure max 2 lines and not too long
                 note_lines = note.splitlines()
@@ -289,7 +287,7 @@ Return ONLY the JSON array."""
                     items=item_details,
                     dateofcreation=datetime.now().strftime("%Y-%m-%d"),
                     zipcode=zipcode,
-                    address=address,
+                    # address="",  # Empty string for backward compatibility  # COMMENTED OUT - Testing removal
                     username=username
                 ),
                 "messages": messages,

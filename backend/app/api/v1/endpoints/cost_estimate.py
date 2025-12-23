@@ -1,7 +1,7 @@
 # Test endpoint for simplified agent
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from app.services.test_agent import get_azure_agent_service
+from app.services.cost_estimation_service import get_azure_agent_service
 from app.core.exceptions import APIError, ValidationError
 from app.schemas.requests import EstimateQueryInput, EstimateResponse
 import logging
@@ -9,10 +9,10 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/test-estimate", response_model=EstimateResponse)
+@router.post("/cost-estimate", response_model=EstimateResponse)
 async def estimate_items_test(
     input: EstimateQueryInput,
-    use_bing: bool = Query(default=None),
+    # use_bing: bool = Query(default=None),  # COMMENTED OUT - Testing removal
     agent_service = Depends(get_azure_agent_service)
 ):
     """Process estimate request using test agent"""
@@ -27,9 +27,9 @@ async def estimate_items_test(
             items=valid_items,
             category=input.category.strip(),
             zipcode=input.zipcode.strip(),
-            address=input.address.strip(),
-            username=input.username.strip(),
-            use_bing=use_bing
+            # address=input.address.strip(),  # COMMENTED OUT - Testing removal
+            username=input.username.strip()
+            # use_bing=use_bing  # COMMENTED OUT - Testing removal
         )
         
         # Check for complete failure

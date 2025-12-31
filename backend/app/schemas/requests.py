@@ -4,8 +4,20 @@ Pydantic models for API request and response validation
 """
 from pydantic import BaseModel, Field
 from typing import Optional, Any
+# ============ Request Schemas ============
 
 
+class SaveFlatItemInput(BaseModel):
+    """Input model for saving a flat item (new Cosmos structure)"""
+    status: str
+    thread_id: str
+    dateOfCreation: str
+    type: str
+    message: str
+    currency: str
+    min_estimate: float
+    max_estimate: float
+    zipcode: str
 # ============ Request Schemas ============
 
 class QueryInput(BaseModel):

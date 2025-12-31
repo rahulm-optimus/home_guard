@@ -12,3 +12,4 @@ class ChatResponse(BaseModel):
     message: str = Field(..., description="Bot response message")
     thread_id: str = Field(..., description="Thread ID for conversation continuity")
     status: str = Field(default="success", description="Response status")
+    estimate: dict = Field(default_factory=lambda: {"min": "", "max": ""}, description="Average min/max estimate or empty if not available")

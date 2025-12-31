@@ -8,48 +8,113 @@ import {
   Avatar,
   List,
   ListItem,
-  ListItemAvatar,
-  ListItemText,
   CircularProgress,
   Alert,
+  Chip,
+  Stack,
+  Divider,
 } from '@mui/material';
-import { Send as SendIcon, SmartToy as BotIcon, Person as PersonIcon } from '@mui/icons-material';
+import {
+  Send as SendIcon,
+  SmartToy as BotIcon,
+  Person as PersonIcon,
+  Refresh as RefreshIcon,
+  KeyboardArrowDown as DownIcon,
+} from '@mui/icons-material';
 import axios from 'axios';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   id: string;
   text: string;
   sender: 'user' | 'bot';
   timestamp: Date;
+  estimate?: {
+    min?: string | number;
+    max?: string | number;
+  };
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+
+const INITIAL_BOT_MESSAGE =
+  "Hello! I'm your home inspection assistant. Tell me the repair or inspection you need along with your ZIP code, and I’ll estimate the cost.";
+
+const QUICK_SUGGESTIONS = [
+  'Tile repair in 94102',
+  'Sewer fix in 94551',
+  'Roof inspection in 90210',
+];
 
 const ChatEstimation: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: 'Hello! I\'m your home inspection assistant. I can help you get cost estimates for repairs and inspections. Just tell me what you need and your ZIP code!',
-      sender: 'bot',
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  /* ---------- Scroll Helpers ---------- */
+
+  const scrollToBottom = (smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: smooth ? 'smooth' : 'auto',
+    });
+  };
+
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return;
+
+    const { scrollTop, scrollHeight, clientHeight } =
+      messagesContainerRef.current;
+
+    setShowScrollToBottom(scrollHeight - scrollTop - clientHeight > 120);
   };
 
   useEffect(() => {
-    scrollToBottom();
+    scrollToBottom(false);
   }, [messages]);
 
+  /* ---------- Stream Initial Bot Message ---------- */
+
+  useEffect(() => {
+    const id = Date.now().toString();
+    let index = 0;
+
+    setMessages([
+      { id, text: '', sender: 'bot', timestamp: new Date() },
+    ]);
+
+    const interval = setInterval(() => {
+      index++;
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === id
+            ? { ...msg, text: INITIAL_BOT_MESSAGE.slice(0, index) }
+            : msg
+        )
+      );
+      if (index >= INITIAL_BOT_MESSAGE.length) clearInterval(interval);
+    }, 18);
+  }, []);
+
+  /* ---------- Refresh ---------- */
+
+  const handleRefreshChat = () => {
+    setMessages([]);
+    setThreadId(null);
+    setError(null);
+  };
+
+  /* ---------- Send Message ---------- */
+
   const handleSendMessage = async () => {
-    if (!inputMessage.trim()) return;
+    if (!inputMessage.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -58,39 +123,42 @@ const ChatEstimation: React.FC = () => {
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInputMessage('');
     setIsLoading(true);
     setError(null);
 
     try {
       const response = await axios.post(`${API_BASE_URL}/api/v1/chat`, {
-        message: inputMessage,
+        message: userMessage.text,
         thread_id: threadId,
       });
 
-      const { message: botResponse, thread_id: newThreadId } = response.data;
+      const { message, thread_id, estimate } = response.data;
 
-      // Update thread ID if new
-      if (!threadId) {
-        setThreadId(newThreadId);
-      }
+      if (!threadId) setThreadId(thread_id);
 
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: botResponse,
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-
-      setMessages(prev => [...prev, botMessage]);
-      setIsLoading(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          text: message,
+          sender: 'bot',
+          timestamp: new Date(),
+          estimate,
+        },
+      ]);
     } catch (err: any) {
-      console.error('Chat error:', err);
-      setError(err.response?.data?.detail?.message || 'Failed to send message. Please try again.');
+      setError(
+        err.response?.data?.detail?.message ||
+        'Failed to send message. Please try again.'
+      );
+    } finally {
       setIsLoading(false);
     }
   };
+
+  /* ---------- Enter Key ---------- */
 
   const handleKeyPress = (event: React.KeyboardEvent) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -99,131 +167,120 @@ const ChatEstimation: React.FC = () => {
     }
   };
 
+  /* ---------- UI ---------- */
+
   return (
     <Box sx={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, color: '#0078d4', mb: 2 }}>
-        Home Inspection Chat Assistant
-      </Typography>
+      {/* Header */}
+      {/* <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+        <Typography variant="h6" fontWeight={600} color="#0078d4">
+          Home Inspection Assistant
+        </Typography>
+        <IconButton onClick={handleRefreshChat}>
+          <RefreshIcon />
+        </IconButton>
+      </Box> */}
 
       {error && (
-        <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
-      <Paper
-        elevation={2}
-        sx={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          mb: 2,
-          borderRadius: 2,
-          overflow: 'hidden',
-        }}
-      >
+      <Paper sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        {/* Messages (Scrollable Area) */}
         <Box
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
           sx={{
             flex: 1,
-            overflow: 'auto',
+            overflowY: 'auto',
             p: 2,
-            bgcolor: '#fafafa',
+            bgcolor: '#faf9f8',
+            position: 'relative',
           }}
         >
           <List>
-            {messages.map((message) => (
-              <ListItem
-                key={message.id}
-                sx={{
-                  alignItems: 'flex-start',
-                  mb: 1,
-                }}
-              >
-                <ListItemAvatar>
-                  <Avatar
+            {messages.map((message) => {
+              const isUser = message.sender === 'user';
+
+              return (
+                <ListItem
+                  key={message.id}
+                  sx={{ justifyContent: isUser ? 'flex-end' : 'flex-start' }}
+                >
+                  {!isUser && (
+                    <Avatar sx={{ bgcolor: '#0078d4', mr: 1 }}>
+                      <BotIcon fontSize="small" />
+                    </Avatar>
+                  )}
+
+                  <Box
                     sx={{
-                      bgcolor: message.sender === 'bot' ? '#0078d4' : '#107c10',
+                      maxWidth: '75%',
+                      bgcolor: isUser ? '#e8f5e8' : '#ffffff',
+                      p: 2,
+                      borderRadius: 3,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
                     }}
                   >
-                    {message.sender === 'bot' ? <BotIcon /> : <PersonIcon />}
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        mb: 0.5,
-                      }}
-                    >
-                      <Typography
-                        variant="subtitle2"
-                        sx={{
-                          fontWeight: 600,
-                          color: message.sender === 'bot' ? '#0078d4' : '#107c10',
-                        }}
-                      >
-                        {message.sender === 'bot' ? 'Assistant' : 'You'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {message.timestamp.toLocaleTimeString()}
-                      </Typography>
-                    </Box>
-                  }
-                  secondary={
-                    <Typography
-                      variant="body1"
-                      sx={{
-                        bgcolor: message.sender === 'bot' ? '#e3f2fd' : '#e8f5e8',
-                        p: 1.5,
-                        borderRadius: 2,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                      }}
-                    >
+                    <Typography variant="caption" fontWeight={600}>
+                      {isUser ? 'You' : 'Assistant'}
+                    </Typography>
+
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {message.text}
-                    </Typography>
-                  }
-                />
-              </ListItem>
-            ))}
+                    </ReactMarkdown>
+                  </Box>
+
+                  {isUser && (
+                    <Avatar sx={{ bgcolor: '#107c10', ml: 1 }}>
+                      <PersonIcon fontSize="small" />
+                    </Avatar>
+                  )}
+                </ListItem>
+              );
+            })}
+
             {isLoading && (
-              <ListItem sx={{ alignItems: 'flex-start' }}>
-                <ListItemAvatar>
-                  <Avatar sx={{ bgcolor: '#0078d4' }}>
-                    <BotIcon />
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#0078d4' }}>
-                      Assistant
-                    </Typography>
-                  }
-                  secondary={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <CircularProgress size={16} />
-                      <Typography variant="body2" color="text.secondary">
-                        Thinking...
-                      </Typography>
-                    </Box>
-                  }
-                />
+              <ListItem sx={{ justifyContent: 'flex-start' }}>
+                <Avatar sx={{ bgcolor: '#0078d4', mr: 1 }}>
+                  <BotIcon fontSize="small" />
+                </Avatar>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CircularProgress size={16} />
+                  <Typography>Assistant is thinking…</Typography>
+                </Box>
               </ListItem>
             )}
+
             <div ref={messagesEndRef} />
           </List>
+
+          {/* Scroll To Bottom Button */}
+          {showScrollToBottom && (
+            <IconButton
+              onClick={() => scrollToBottom(true)}
+              sx={{
+                position: 'sticky',
+                bottom: 16,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                bgcolor: '#0078d4',
+                color: 'white',
+                boxShadow: 3,
+                '&:hover': { bgcolor: '#005a9e' },
+              }}
+            >
+              <DownIcon />
+            </IconButton>
+          )}
         </Box>
 
-        <Box
-          sx={{
-            p: 2,
-            borderTop: '1px solid #e0e0e0',
-            bgcolor: 'white',
-          }}
-        >
+        <Divider />
+
+        {/* Input (Fixed Bottom) */}
+        <Box sx={{ p: 2, bgcolor: '#fff' }}>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField
               fullWidth
@@ -232,35 +289,35 @@ const ChatEstimation: React.FC = () => {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask me about cost estimates for repairs (e.g., 'How much to fix a leaky roof in 90210?')"
-              variant="outlined"
-              size="small"
-              disabled={isLoading}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                },
-              }}
+              placeholder="Describe a repair and ZIP code (e.g., tile repair in 94102)"
             />
+
             <IconButton
-              color="primary"
               onClick={handleSendMessage}
               disabled={!inputMessage.trim() || isLoading}
               sx={{
                 bgcolor: '#0078d4',
                 color: 'white',
-                '&:hover': {
-                  bgcolor: '#005a9e',
-                },
-                '&.Mui-disabled': {
-                  bgcolor: '#e0e0e0',
-                  color: '#9e9e9e',
-                },
+                height: 44,
+                width: 44,
+                '&:hover': { bgcolor: '#005a9e' },
               }}
             >
               <SendIcon />
             </IconButton>
           </Box>
+
+          <Stack direction="row" spacing={1} mt={1} flexWrap="wrap">
+            {QUICK_SUGGESTIONS.map((text) => (
+              <Chip
+                key={text}
+                label={text}
+                size="small"
+                clickable
+                onClick={() => setInputMessage(text)}
+              />
+            ))}
+          </Stack>
         </Box>
       </Paper>
     </Box>

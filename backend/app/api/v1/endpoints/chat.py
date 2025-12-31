@@ -31,7 +31,8 @@ async def chat_with_agent(
         return ChatResponse(
             message=result["message"],
             thread_id=result["thread_id"],
-            status="success"
+            status="success",
+            estimate=result.get("estimate", {"min": "", "max": ""})
         )
     
     except APIError as e:

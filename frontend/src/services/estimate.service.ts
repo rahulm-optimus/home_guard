@@ -1,3 +1,4 @@
+
 /**
  * Estimate Service - API calls for cost estimation
  */
@@ -11,6 +12,12 @@ import {
 } from '../types/api.types';
 
 export const estimateService = {
+  /**
+   * Delete an item from Cosmos DB
+   */
+  async deleteItem(itemId: string, zipcode: string): Promise<void> {
+    await axiosInstance.delete(`/api/v1/items/${itemId}`, { params: { zipcode } });
+  },
   /**
    * Get cost estimates for items
    */

@@ -176,8 +176,8 @@ const theme = createTheme({
 
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-  { text: 'Cost Estimation', icon: <MoneyIcon />, path: '/estimation' },
-  { text: 'Chatbot', icon: <ChatIcon />, path: '/chatbot' },
+  // { text: 'Cost Estimation', icon: <MoneyIcon />, path: '/estimation' },
+  { text: 'Cost Advisor', icon: <ChatIcon />, path: '/chatbot' },
   { text: 'Saved Items', icon: <StorageIcon />, path: '/saved-items' },
 ];
 
@@ -343,7 +343,7 @@ const DashboardHome: React.FC = () => {
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
         <Box
-          onClick={() => navigate('/estimation')}
+          onClick={() => navigate('/chatbot')}
           sx={{
             p: 4,
             bgcolor: '#ffffff',
@@ -402,7 +402,7 @@ function App() {
           <DashboardLayout>
             <Routes>
               <Route path="/" element={<DashboardHome />} />
-              <Route path="/estimation" element={<CostEstimation />} />
+              {/* <Route path="/estimation" element={<CostEstimation />} /> */}
               <Route path="/chatbot" element={<ChatEstimation />} />
               <Route path="/saved-items" element={<SavedItems />} />
               <Route path="/404" element={<NotFound />} />

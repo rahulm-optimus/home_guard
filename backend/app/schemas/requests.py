@@ -18,6 +18,19 @@ class SaveFlatItemInput(BaseModel):
     min_estimate: float
     max_estimate: float
     zipcode: str
+
+
+class SaveCostEstimatesRequest(BaseModel):
+    """Request wrapper for saving cost estimates"""
+    items: list[SaveFlatItemInput] = Field(..., min_items=1, description="List of cost estimate records to save")
+
+
+class SaveCostEstimatesResponse(BaseModel):
+    """Response from save cost estimates endpoint"""
+    status: str = Field(..., description="Operation status", example="success")
+    saved_count: int = Field(..., description="Number of items saved successfully", example=2)
+
+
 # ============ Request Schemas ============
 
 class QueryInput(BaseModel):

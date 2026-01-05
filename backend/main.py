@@ -17,6 +17,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress Azure SDK logs
+logging.getLogger('azure').setLevel(logging.WARNING)
+logging.getLogger('azure.core').setLevel(logging.WARNING)
+logging.getLogger('azure.cosmos').setLevel(logging.WARNING)
+logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
+
 
 def create_application() -> FastAPI:
     """
@@ -67,7 +73,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",  # Must be string for reload mode
-        host="0.0.0.0",
+        host="localhost",
         port=8000,
         reload=settings.DEBUG
     )

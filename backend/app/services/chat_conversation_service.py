@@ -182,8 +182,7 @@ Return ONLY JSON:
                     "message": (
                         f"Updated estimate for **{state['item']}** in **{state['location']}  {state['zipcode']}**:\n\n"
                         f"• Min: ${state['estimate']['min']}\n"
-                        f"• Max: ${state['estimate']['max']}\n"
-                        f"• Avg: ${state['estimate']['avg']}\n\n"
+                        f"• Max: ${state['estimate']['max']}\n\n"
                         "Would you like to save this estimate? (yes/no)"
                     ),
                     "thread_id": thread_id

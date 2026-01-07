@@ -23,7 +23,6 @@ logging.getLogger('azure.core').setLevel(logging.WARNING)
 logging.getLogger('azure.cosmos').setLevel(logging.WARNING)
 logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
 
-
 def create_application() -> FastAPI:
     """
     Application factory pattern
@@ -73,7 +72,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",  # Must be string for reload mode
-        host="localhost",
+        host="0.0.0.0",
         port=8000,
         reload=settings.DEBUG
     )

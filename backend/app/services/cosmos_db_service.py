@@ -114,7 +114,7 @@ class CosmosDBService:
     # SAVE OPERATIONS
     # ------------------------------------------------------------------
 
-    def save_flat_items(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def save_flat_items(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Save flat dict-based items (non-Pydantic)
         Ensures `id` and `zipcode` exist

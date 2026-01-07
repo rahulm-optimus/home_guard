@@ -4,7 +4,7 @@ Save Endpoints
 API routes for saving items to Cosmos DB
 """
 from fastapi import APIRouter, Depends, Query
-from app.schemas.requests import SaveItemsRequest, SaveItemsResponse, GetItemsResponse, SaveFlatItemInput
+from app.schemas.requests import SaveItemsRequest, SaveItemsResponse, GetItemsResponse, SaveFlatItemInput, SaveCostEstimatesRequest, SaveCostEstimatesResponse
 
 # New endpoint for saving flat items
 from fastapi import Body
@@ -17,22 +17,33 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/save-items", summary="Save flat items to Cosmos DB")
+@router.post("/save-items", summary="Save cost estimate items", response_model=SaveCostEstimatesResponse)
 async def save_flat_items(
-    items: list[SaveFlatItemInput] = Body(..., description="List of flat items to save"),
+    request: SaveCostEstimatesRequest = Body(..., description="Cost estimates request with items array"),
     cosmos_service: CosmosDBService = Depends(get_cosmos_service)
-) -> dict:
+) -> SaveCostEstimatesResponse:
     """
-    Save multiple flat items to Azure Cosmos DB (new structure)
+    Persists one or more cost estimate records into Cosmos DB.
+    
+    This endpoint accepts a request body with an 'items' array containing cost estimates,
+    saves them to Azure Cosmos DB, and returns the saved items with operation status.
+    
+    Args:
+        request: SaveCostEstimatesRequest containing list of items to save
+        cosmos_service: Injected CosmosDBService instance
+        
+    Returns:
+        SaveCostEstimatesResponse with status, statusCode, message, and estimatedItems
     """
-    logger.info(f"Saving {len(items)} flat items to Cosmos DB")
-    result = cosmos_service.save_flat_items([item.dict() for item in items])
-    return {
-        "status": "success" if result["failed_count"] == 0 else "partial_success",
-        "status_code": 200,
-        "message": f"Saved {result['saved_count']} items, {result['failed_count']} failed" if result["failed_count"] else f"Successfully saved all {result['saved_count']} items",
-        "data": result
-    }
+    items = request.items
+    logger.info(f"Saving {len(items)} cost estimate items to Cosmos DB")
+    
+    result = await cosmos_service.save_flat_items([item.dict() for item in items])
+    
+    return SaveCostEstimatesResponse(
+        status="success" if result["failed_count"] == 0 else "partial_success",
+        saved_count=result["saved_count"]
+    )
 
 
 @router.get("/items", response_model=GetItemsResponse, summary="Get all items with pagination")

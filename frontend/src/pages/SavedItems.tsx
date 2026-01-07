@@ -9,14 +9,14 @@ import {
   Alert,
   IconButton,
   Grid,
-  Button,
+  // Button,
   Stack,
   Divider,
   TablePagination,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
-  Delete as DeleteIcon,
+  // Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { estimateService } from '../services/estimate.service';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -49,24 +49,24 @@ const SavedItems: React.FC = () => {
     fetchItems();
   }, [page, rowsPerPage]);
 
-  const handleDelete = async (id: string, zipcode: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
-    try {
-      await estimateService.deleteItem(id, zipcode);
-      fetchItems();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to delete item');
-    }
-  };
+  // const handleDelete = async (id: string, zipcode: string) => {
+  //   if (!confirm('Are you sure you want to delete this item?')) return;
+  //   try {
+  //     await estimateService.deleteItem(id, zipcode);
+  //     fetchItems();
+  //   } catch (err: any) {
+  //     setError(err.response?.data?.message || 'Failed to delete item');
+  //   }
+  // };
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'approved': return 'success';
-      case 'pending': return 'warning';
-      case 'rejected': return 'error';
-      default: return 'default';
-    }
-  };
+  // const getStatusColor = (status: string) => {
+  //   switch (status.toLowerCase()) {
+  //     case 'approved': return 'success';
+  //     case 'pending': return 'warning';
+  //     case 'rejected': return 'error';
+  //     default: return 'default';
+  //   }
+  // };
 
   const handleCopy = async (text: string) => {
     try {
@@ -179,7 +179,7 @@ const SavedItems: React.FC = () => {
                   </Grid>
 
                   {/* Actions */}
-                  <Grid
+                  {/* <Grid
                     item
                     xs={12}
                     md={3}
@@ -194,7 +194,7 @@ const SavedItems: React.FC = () => {
                     >
                       Delete
                     </Button>
-                  </Grid>
+                  </Grid> */}
                 </Grid>
 
                 <Divider sx={{ my: 2 }} />

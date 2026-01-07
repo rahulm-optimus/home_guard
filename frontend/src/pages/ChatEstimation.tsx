@@ -18,7 +18,6 @@ import {
   Send as SendIcon,
   SmartToy as BotIcon,
   Person as PersonIcon,
-  Refresh as RefreshIcon,
   KeyboardArrowDown as DownIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
@@ -105,11 +104,11 @@ const ChatEstimation: React.FC = () => {
 
   /* ---------- Refresh ---------- */
 
-  const handleRefreshChat = () => {
-    setMessages([]);
-    setThreadId(null);
-    setError(null);
-  };
+  // const handleRefreshChat = () => {
+  //   setMessages([]);
+  //   setThreadId(null);
+  //   setError(null);
+  // };
 
   /* ---------- Send Message ---------- */
 
@@ -234,7 +233,7 @@ const ChatEstimation: React.FC = () => {
                   </Box>
 
                   {isUser && (
-                    <Avatar sx={{ bgcolor: '#107c10', ml: 1 }}>
+                      <Avatar sx={{ border: '1px solid #107c10', ml: 1 }}>
                       <PersonIcon fontSize="small" />
                     </Avatar>
                   )}
@@ -244,7 +243,7 @@ const ChatEstimation: React.FC = () => {
 
             {isLoading && (
               <ListItem sx={{ justifyContent: 'flex-start' }}>
-                <Avatar sx={{ bgcolor: '#0078d4', mr: 1 }}>
+                <Avatar sx={{ border: '1px solid #0078d4', mr: 1 }}>
                   <BotIcon fontSize="small" />
                 </Avatar>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

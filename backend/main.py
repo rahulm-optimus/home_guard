@@ -12,7 +12,7 @@ import logging
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ def create_application() -> FastAPI:
             "http://127.0.0.1:3000",
             "http://localhost:5173",
             "http://127.0.0.1:5173",
+            "https://icy-plant-07dd2071e.1.azurestaticapps.net"
         ],
         allow_credentials=True,
         allow_methods=["*"],

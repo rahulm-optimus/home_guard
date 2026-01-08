@@ -13,9 +13,13 @@ import {
   Stack,
   Divider,
   TablePagination,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
   // Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { estimateService } from '../services/estimate.service';
@@ -30,12 +34,35 @@ const SavedItems: React.FC = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
+  // Debouncing effect for search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setPage(0); // Reset to first page when search query changes
+    }, 500); // 500ms debounce delay
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const fetchItems = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await estimateService.getItems(page * rowsPerPage, rowsPerPage);
+      let response;
+      if (debouncedSearchQuery.trim()) {
+        // Search items if query exists
+        response = await estimateService.searchItems(
+          debouncedSearchQuery.trim(),
+          page * rowsPerPage,
+          rowsPerPage
+        );
+      } else {
+        // Get all items if no search query
+        response = await estimateService.getItems(page * rowsPerPage, rowsPerPage);
+      }
       setItems(response.data.items);
       setTotalCount(response.data.total_count);
     } catch (err: any) {
@@ -47,7 +74,11 @@ const SavedItems: React.FC = () => {
 
   useEffect(() => {
     fetchItems();
-  }, [page, rowsPerPage]);
+  }, [page, rowsPerPage, debouncedSearchQuery]);
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+  };
 
   // const handleDelete = async (id: string, zipcode: string) => {
   //   if (!confirm('Are you sure you want to delete this item?')) return;
@@ -109,6 +140,68 @@ const SavedItems: React.FC = () => {
           <RefreshIcon />
         </IconButton>
       </Box>
+      
+      {/* Search Input */}
+      <Box sx={{ mb: 3 }}>
+        <TextField
+          fullWidth
+          placeholder="Search items by items..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          variant="outlined"
+          size="medium"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: 'text.secondary' }} />
+              </InputAdornment>
+            ),
+            endAdornment: searchQuery && (
+              <InputAdornment position="end">
+                <IconButton
+                  size="small"
+                  onClick={handleClearSearch}
+                  edge="end"
+                  sx={{
+                    bgcolor: 'grey.100',
+                    '&:hover': { bgcolor: 'grey.200' },
+                  }}
+                >
+                  <ClearIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              borderRadius: '999px', // pill shape
+              backgroundColor: '#fff',
+              paddingRight: 1,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'all 0.2s ease-in-out',
+
+              '& fieldset': {
+                borderColor: 'transparent',
+              },
+
+              '&:hover fieldset': {
+                borderColor: 'transparent',
+              },
+
+              '&.Mui-focused fieldset': {
+                borderColor: 'primary.main',
+                borderWidth: '1px',
+              },
+            },
+
+            '& input::placeholder': {
+              color: 'text.secondary',
+              opacity: 0.8,
+            },
+          }}
+        />
+      </Box>
+
 
       {/* Error */}
       {error && (

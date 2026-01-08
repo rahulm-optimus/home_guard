@@ -222,6 +222,51 @@ class CosmosDBService:
                 error_code=ErrorCodes.COSMOS_DB_ERROR
             )
 
+    def search_items_by_message(self, search_query: str, offset: int = 0, limit: int = 10) -> Dict[str, Any]:
+        """Search items by message field with pagination"""
+        if not self.container:
+            logger.warning("Cosmos DB not configured. Running in mock mode.")
+            return self._mock_search_items(search_query, offset, limit)
+
+        try:
+            # Using CONTAINS for case-insensitive search
+            search_query_escaped = search_query.replace("'", "''")
+            
+            items = list(self.container.query_items(
+                query=(
+                    "SELECT * FROM c "
+                    f"WHERE CONTAINS(LOWER(c.message), LOWER('{search_query_escaped}')) "
+                    "ORDER BY c._ts DESC "
+                    f"OFFSET {offset} LIMIT {limit}"
+                ),
+                enable_cross_partition_query=True
+            ))
+
+            count_result = list(self.container.query_items(
+                query=(
+                    "SELECT VALUE COUNT(1) FROM c "
+                    f"WHERE CONTAINS(LOWER(c.message), LOWER('{search_query_escaped}'))"
+                ),
+                enable_cross_partition_query=True
+            ))
+            count = count_result[0] if count_result else 0
+
+            return {
+                "items": items,
+                "total_count": count,
+                "offset": offset,
+                "limit": limit,
+                "returned_count": len(items)
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to search items: {str(e)}")
+            raise APIError(
+                message=f"Failed to search items from Cosmos DB: {str(e)}",
+                status_code=500,
+                error_code=ErrorCodes.COSMOS_DB_ERROR
+            )
+
     # ------------------------------------------------------------------
     # MOCK METHODS
     # ------------------------------------------------------------------
@@ -260,6 +305,27 @@ class CosmosDBService:
         return {
             "items": mock_items,
             "total_count": 3,
+            "offset": offset,
+            "limit": limit,
+            "returned_count": len(mock_items),
+            "note": "Mock mode enabled"
+        }
+
+    def _mock_search_items(self, search_query: str, offset: int, limit: int) -> Dict[str, Any]:
+        mock_items = [
+            {
+                "id": f"mock-{i}",
+                "zipcode": "12345",
+                "message": f"Mock item with {search_query}",
+                "description": f"Mock search result {i}",
+                "status": "active"
+            }
+            for i in range(offset, offset + min(limit, 2))
+        ]
+
+        return {
+            "items": mock_items,
+            "total_count": 2,
             "offset": offset,
             "limit": limit,
             "returned_count": len(mock_items),

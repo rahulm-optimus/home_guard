@@ -44,4 +44,14 @@ export const estimateService = {
     });
     return response.data;
   },
+
+  /**
+   * Search items by message with pagination
+   */
+  async searchItems(searchQuery: string, offset: number = 0, limit: number = 10): Promise<GetItemsResponse> {
+    const response = await axiosInstance.get<GetItemsResponse>('/api/v1/search-items', {
+      params: { search_query: searchQuery, offset, limit },
+    });
+    return response.data;
+  },
 };

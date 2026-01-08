@@ -97,6 +97,63 @@ async def get_items(
     )
 
 
+@router.get("/search-items", response_model=GetItemsResponse, summary="Search items by message")
+async def search_items(
+    search_query: str = Query(..., description="Search query to filter items by message field"),
+    offset: int = Query(default=0, ge=0, description="Number of items to skip"),
+    limit: int = Query(default=10, ge=1, le=100, description="Maximum number of items to return"),
+    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+) -> GetItemsResponse:
+    """
+    Search items from Cosmos DB by message field with pagination support
+    
+    This endpoint performs a case-insensitive search on the message field
+    and returns matching items with pagination.
+    
+    Args:
+        search_query: Search text to find in message field (required)
+        offset: Number of items to skip (default: 0)
+        limit: Maximum items to return (default: 10, max: 100)
+        cosmos_service: Injected CosmosDBService instance
+        
+    Returns:
+        GetItemsResponse with paginated search results and metadata
+        
+    Example Response:
+    ```json
+    {
+        "status": "success",
+        "status_code": 200,
+        "message": "Found 5 items matching 'plumbing'",
+        "data": {
+            "items": [...],
+            "total_count": 5,
+            "offset": 0,
+            "limit": 10,
+            "returned_count": 5
+        }
+    }
+    ```
+    """
+    logger.info(f"Searching items with query='{search_query}', offset={offset}, limit={limit}")
+    
+    # Search items by message
+    result = cosmos_service.search_items_by_message(
+        search_query=search_query,
+        offset=offset,
+        limit=limit
+    )
+    
+    message = f"Found {result['returned_count']} items matching '{search_query}' out of {result['total_count']} total"
+    
+    return GetItemsResponse(
+        data=result,
+        status="success",
+        status_code=200,
+        message=message
+    )
+
+
 @router.delete("/items/{item_id}", summary="Delete an item from Cosmos DB")
 async def delete_item(
     item_id: str,

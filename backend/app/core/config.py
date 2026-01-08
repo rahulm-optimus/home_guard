@@ -2,11 +2,13 @@
 Application Configuration
 Centralized settings management using Pydantic Settings
 """
-
+import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 from functools import lru_cache
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class Settings(BaseSettings):
     """Application settings with environment variable support"""
@@ -34,11 +36,9 @@ class Settings(BaseSettings):
 
     # Azure AI Foundry Agent Configuration
     AZURE_TENANT_ID: Optional[str] = None
-    AZURE_AI_PROJECT_ENDPOINT: str = (
-        "https://aif-home-inspection-ai-dev-wu-01.services.ai.azure.com/api/projects/proj-home-inspection-ai-dev-wu-01"
-    )
-    AZURE_AGENT_ID: str = "asst_7b4oDSAnNmPyfUPnODbzz0Vs"
-    AZURE_AI_MODEL_DEPLOYMENT_NAME: str = "gpt-4o"
+    AZURE_AI_PROJECT_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT")
+    AZURE_AGENT_ID: str = os.getenv("AZURE_AGENT_ID")
+    AZURE_AI_MODEL_DEPLOYMENT_NAME: str = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4o")
 
     # Server Configuration
     PORT: int = 5000

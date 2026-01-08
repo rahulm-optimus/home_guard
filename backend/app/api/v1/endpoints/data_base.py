@@ -4,7 +4,7 @@ Save Endpoints
 API routes for saving items to Cosmos DB
 """
 from fastapi import APIRouter, Depends, Query
-from app.schemas.requests import SaveItemsRequest, SaveItemsResponse, GetItemsResponse, SaveFlatItemInput, SaveCostEstimatesRequest, SaveCostEstimatesResponse
+from app.schemas.requests import SaveItemsRequest, SaveItemsResponse, GetItemsResponse, SaveFlatItemInput, SaveCostEstimatesRequest, SaveCostEstimatesResponse, UpdateCostEstimateItem, UpdateCostEstimateRequest, UpdateCostEstimateResponse
 
 # New endpoint for saving flat items
 from fastapi import Body
@@ -170,3 +170,86 @@ async def delete_item(
         raise HTTPException(status_code=404, detail=result["message"])
     else:
         raise HTTPException(status_code=500, detail=result["message"])
+
+
+@router.put("/update-item/{item_id}", summary="Update an existing cost estimate item", response_model=UpdateCostEstimateResponse)
+async def update_item(
+    item_id: str,
+    zipcode: str = Query(..., description="Zipcode (partition key) for the item"),
+    request: UpdateCostEstimateRequest = Body(..., description="Fields to update"),
+    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+) -> UpdateCostEstimateResponse:
+    """
+    Update an existing cost estimate item in Cosmos DB.
+    
+    This endpoint updates specified fields of an existing item while preserving
+    immutable fields (id, zipcode, thread_id, type, currency). It guarantees that
+    the record exists before updating.
+    
+    Args:
+        item_id: Unique identifier of the item to update
+        zipcode: Zipcode (partition key) for the item
+        request: UpdateCostEstimateRequest containing fields to update
+        cosmos_service: Injected CosmosDBService instance
+        
+    Returns:
+        UpdateCostEstimateResponse with status and item_id
+        
+    Raises:
+        HTTPException: 404 if item not found, 500 for other errors
+        
+    Example Request:
+    ```json
+    {
+        "item": {
+            "status": "approved",
+            "min_estimate": 120.0,
+            "max_estimate": 250.0,
+            "message": "Updated cost estimate"
+        }
+    }
+    ```
+    """
+    logger.info(f"Updating item {item_id} with zipcode {zipcode}")
+    
+    try:
+        # Fetch existing item to ensure it exists
+        existing_item = cosmos_service.get_item(item_id, zipcode)
+        
+        if existing_item is None:
+            logger.warning(f"Item {item_id} not found for update")
+            raise HTTPException(status_code=404, detail=f"Item with id '{item_id}' not found")
+        
+        # Remove Cosmos DB system fields (read-only fields that start with _)
+        system_fields = ['_rid', '_self', '_etag', '_attachments', '_ts']
+        item_data = {k: v for k, v in existing_item.items() if k not in system_fields}
+        
+        # Merge update fields into existing item
+        update_data = request.item.dict(exclude_unset=True)
+        
+        # Update only the provided fields
+        for key, value in update_data.items():
+            if value is not None:
+                item_data[key] = value
+        
+        logger.info(f"Merged update fields: {list(update_data.keys())}")
+        
+        # Upsert the updated item
+        result = await cosmos_service.save_flat_items([item_data])
+        
+        if result["failed_count"] > 0:
+            logger.error(f"Failed to update item {item_id}")
+            raise HTTPException(status_code=500, detail="Failed to update item")
+        
+        logger.info(f"Successfully updated item {item_id}")
+        return UpdateCostEstimateResponse(
+            status="success",
+            message="Item updated successfully",
+            item_id=item_id
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error updating item {item_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")

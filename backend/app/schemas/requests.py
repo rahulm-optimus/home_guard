@@ -31,6 +31,28 @@ class SaveCostEstimatesResponse(BaseModel):
     saved_count: int = Field(..., description="Number of items saved successfully", example=2)
 
 
+class UpdateCostEstimateItem(BaseModel):
+    """Input model for updating an existing cost estimate item (only updatable fields)"""
+    status: Optional[str] = Field(None, description="Updated status")
+    dateOfCreation: Optional[str] = Field(None, description="Updated creation date")
+    message: Optional[str] = Field(None, description="Updated message")
+    min_estimate: Optional[float] = Field(None, description="Updated minimum estimate")
+    max_estimate: Optional[float] = Field(None, description="Updated maximum estimate")
+    estimate_scope: Optional[str] = Field(None, description="Updated estimate scope (e.g., labor_only)")
+
+
+class UpdateCostEstimateRequest(BaseModel):
+    """Request wrapper for updating a cost estimate item"""
+    item: UpdateCostEstimateItem = Field(..., description="Fields to update")
+
+
+class UpdateCostEstimateResponse(BaseModel):
+    """Response from update cost estimate endpoint"""
+    status: str = Field(..., description="Operation status", example="success")
+    message: str = Field(..., description="Operation message", example="Item updated successfully")
+    item_id: str = Field(..., description="ID of the updated item")
+
+
 # ============ Request Schemas ============
 
 class QueryInput(BaseModel):

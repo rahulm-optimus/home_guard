@@ -107,14 +107,14 @@ const SavedItems: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'approved': return 'success';
-      case 'pending': return 'warning';
-      case 'rejected': return 'error';
-      default: return 'default';
-    }
-  };
+  // const getStatusColor = (status: string) => {
+  //   switch (status.toLowerCase()) {
+  //     case 'approved': return 'success';
+  //     case 'pending': return 'warning';
+  //     case 'rejected': return 'error';
+  //     default: return 'default';
+  //   }
+  // };
 
   const handleCopy = async (text: string) => {
     try {

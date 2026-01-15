@@ -9,22 +9,24 @@ import {
   Alert,
   IconButton,
   Grid,
-  // Button,
+  Button,
   Stack,
   Divider,
   TablePagination,
   TextField,
   InputAdornment,
+  Snackbar,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
-  // Delete as DeleteIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import { estimateService } from '../services/estimate.service';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import Tooltip from '@mui/material/Tooltip';
+import EditItemDialog, { EditItemFormData } from '../components/EditItemDialog';
 
 
 const SavedItems: React.FC = () => {
@@ -36,6 +38,9 @@ const SavedItems: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Debouncing effect for search
   useEffect(() => {
@@ -80,24 +85,36 @@ const SavedItems: React.FC = () => {
     setSearchQuery('');
   };
 
-  // const handleDelete = async (id: string, zipcode: string) => {
-  //   if (!confirm('Are you sure you want to delete this item?')) return;
-  //   try {
-  //     await estimateService.deleteItem(id, zipcode);
-  //     fetchItems();
-  //   } catch (err: any) {
-  //     setError(err.response?.data?.message || 'Failed to delete item');
-  //   }
-  // };
+  const handleEditClick = (item: any) => {
+    setSelectedItem(item);
+    setEditDialogOpen(true);
+  };
 
-  // const getStatusColor = (status: string) => {
-  //   switch (status.toLowerCase()) {
-  //     case 'approved': return 'success';
-  //     case 'pending': return 'warning';
-  //     case 'rejected': return 'error';
-  //     default: return 'default';
-  //   }
-  // };
+  const handleEditSubmit = async (formData: EditItemFormData) => {
+    if (!selectedItem) return;
+
+    try {
+      await estimateService.updateItem(
+        selectedItem.id,
+        selectedItem.zipcode,
+        { item: formData }
+      );
+      setSuccessMessage('Cost Estimate updated successfully');
+      setEditDialogOpen(false);
+      fetchItems(); // Refresh the list
+    } catch (err: any) {
+      throw err; // Let the dialog handle the error
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'approved': return 'success';
+      case 'pending': return 'warning';
+      case 'rejected': return 'error';
+      default: return 'default';
+    }
+  };
 
   const handleCopy = async (text: string) => {
     try {
@@ -232,7 +249,7 @@ const SavedItems: React.FC = () => {
               <CardContent>
                 <Grid container spacing={2} alignItems="center">
                   {/* Message / Description */}
-                  <Grid item xs={12} md={9}>
+                  <Grid item xs={12} md={7}>
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
                       <Typography
                         variant="subtitle1"
@@ -252,7 +269,7 @@ const SavedItems: React.FC = () => {
                         </IconButton>
                       </Tooltip>
                     </Box>
-                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                    <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 1 }}>
                       <Chip
                         label={`Min: $${item.min_estimate?.toLocaleString()}`}
                         color="success"
@@ -263,31 +280,26 @@ const SavedItems: React.FC = () => {
                         color="error"
                         size="small"
                       />
-                      {/* <Chip
-                        label={item.status.toUpperCase()}
-                        color={getStatusColor(item.status)}
-                        size="small"
-                      /> */}
                     </Stack>
                   </Grid>
 
                   {/* Actions */}
-                  {/* <Grid
+                  <Grid
                     item
                     xs={12}
-                    md={3}
+                    md={5}
                     sx={{ textAlign: { xs: 'left', md: 'right' } }}
                   >
                     <Button
                       variant="outlined"
-                      color="error"
+                      color="primary"
                       size="small"
-                      startIcon={<DeleteIcon />}
-                      onClick={() => handleDelete(item.id, item.zipcode)}
+                      startIcon={<EditIcon />}
+                      onClick={() => handleEditClick(item)}
                     >
-                      Delete
+                      Edit
                     </Button>
-                  </Grid> */}
+                  </Grid>
                 </Grid>
 
                 <Divider sx={{ my: 2 }} />
@@ -342,6 +354,26 @@ const SavedItems: React.FC = () => {
           </Typography>
         </Box>
       )}
+
+      {/* Edit Dialog */}
+      <EditItemDialog
+        open={editDialogOpen}
+        onClose={() => setEditDialogOpen(false)}
+        onSubmit={handleEditSubmit}
+        editData={selectedItem}
+      />
+
+      {/* Success Snackbar */}
+      <Snackbar
+        open={!!successMessage}
+        autoHideDuration={4000}
+        onClose={() => setSuccessMessage(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="success" onClose={() => setSuccessMessage(null)} sx={{ width: '100%' }}>
+          {successMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

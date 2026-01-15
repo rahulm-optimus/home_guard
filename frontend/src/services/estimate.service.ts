@@ -9,15 +9,11 @@ import {
   SaveItemsRequest,
   SaveItemsResponse,
   GetItemsResponse,
+  UpdateItemRequest,
+  UpdateItemResponse
 } from '../types/api.types';
 
 export const estimateService = {
-  /**
-   * Delete an item from Cosmos DB
-   */
-  async deleteItem(itemId: string, zipcode: string): Promise<void> {
-    await axiosInstance.delete(`/api/v1/items/${itemId}`, { params: { zipcode } });
-  },
   /**
    * Get cost estimates for items
    */
@@ -52,6 +48,18 @@ export const estimateService = {
     const response = await axiosInstance.get<GetItemsResponse>('/api/v1/search-items', {
       params: { search_query: searchQuery, offset, limit },
     });
+    return response.data;
+  },
+
+  /**
+   * Update an existing item in Cosmos DB
+   */
+  async updateItem(itemId: string, zipcode: string, data: UpdateItemRequest): Promise<UpdateItemResponse> {
+    const response = await axiosInstance.put<UpdateItemResponse>(
+      `/api/v1/update-item/${itemId}`,
+      data,
+      { params: { zipcode } }
+    );
     return response.data;
   },
 };

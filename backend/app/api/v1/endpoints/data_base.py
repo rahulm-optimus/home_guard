@@ -153,25 +153,6 @@ async def search_items(
         message=message
     )
 
-
-@router.delete("/items/{item_id}", summary="Delete an item from Cosmos DB")
-async def delete_item(
-    item_id: str,
-    zipcode: str = Query(..., description="Zipcode (partition key) for the item"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
-) -> dict:
-    """
-    Delete a single item from Cosmos DB by id and zipcode (partition key)
-    """
-    result = cosmos_service.delete_item(item_id, zipcode)
-    if result["status"] == "success":
-        return {"status": "success", "message": result["message"]}
-    elif result["status"] == "not_found":
-        raise HTTPException(status_code=404, detail=result["message"])
-    else:
-        raise HTTPException(status_code=500, detail=result["message"])
-
-
 @router.put("/update-item/{item_id}", summary="Update an existing cost estimate item", response_model=UpdateCostEstimateResponse)
 async def update_item(
     item_id: str,

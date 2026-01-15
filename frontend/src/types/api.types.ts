@@ -97,3 +97,25 @@ export interface EstimationFormData {
 export interface EditableItem extends ItemDetail {
   id: string;
 }
+
+// Update Types
+export interface UpdateItemRequest {
+  item: {
+    status?: string;
+    dateOfCreation?: string;
+    message?: string;
+    min_estimate?: number;
+    max_estimate?: number;
+    estimate_scope?: string;
+  };
+}
+
+export interface UpdateItemResponse {
+  status: string;
+  status_code: number;
+  message: string;
+  data: {
+    id: string;
+    updated: boolean;
+  };
+}

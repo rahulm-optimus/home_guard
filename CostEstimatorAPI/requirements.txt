@@ -1,0 +1,20 @@
+
+# Azure Functions core
+azure-functions
+
+# Azure Cosmos DB SDK
+azure-cosmos
+
+# Pydantic for schema validation
+pydantic
+pydantic-settings
+
+# Azure Identity for authentication
+azure-identity
+
+# Azure AI SDKs (Foundry, Agents, etc.)
+azure-ai-agents
+azure-ai-projects
+
+# dotenv for environment variable management
+python-dotenv

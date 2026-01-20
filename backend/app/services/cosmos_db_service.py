@@ -156,6 +156,53 @@ class CosmosDBService:
                 error_code=ErrorCodes.COSMOS_DB_ERROR
             )
 
+    def find_cluster_by_name(self, name: str, exclude_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Find a cluster by name (case-insensitive, trimmed).
+        
+        Args:
+            name: The cluster name to search for
+            exclude_id: Optional cluster ID to exclude from results (useful for updates)
+            
+        Returns:
+            The cluster document if found, None otherwise
+        """
+        if not self.cluster_container:
+            logger.warning("Cluster container not configured. Cannot search for cluster.")
+            return None
+
+        try:
+            # Normalize the search name: trim and collapse spaces
+            normalized_name = ' '.join(name.strip().split()).lower()
+            
+            # Build query to find cluster by normalized name
+            query = "SELECT * FROM c WHERE LOWER(TRIM(REPLACE(REPLACE(c.name, '  ', ' '), '  ', ' '))) = @name"
+            parameters = [{"name": "@name", "value": normalized_name}]
+            
+            # Add exclusion if updating existing cluster
+            if exclude_id:
+                query += " AND c.id != @exclude_id"
+                parameters.append({"name": "@exclude_id", "value": exclude_id})
+            
+            results = list(self.cluster_container.query_items(
+                query=query,
+                parameters=parameters,
+                enable_cross_partition_query=True,
+                max_item_count=1
+            ))
+            
+            if results:
+                return self._remove_system_fields(results[0])
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to search for cluster by name: {str(e)}")
+            raise APIError(
+                message=f"Failed to search for cluster: {str(e)}",
+                status_code=500,
+                error_code=ErrorCodes.COSMOS_DB_ERROR
+            )
+
     async def save_clusters(self, clusters: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Save/upsert clusters to the cluster container"""
         if not self.cluster_container:

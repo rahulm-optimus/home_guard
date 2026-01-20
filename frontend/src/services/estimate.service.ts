@@ -85,4 +85,14 @@ export const estimateService = {
     const response = await axiosInstance.put(`/api/v1/clusters/${clusterId}`, data);
     return response.data;
   },
+
+  /**
+   * Check if a cluster name already exists
+   */
+  async checkClusterName(name: string): Promise<{ exists: boolean; cluster_id?: string; name?: string; zipcodes?: string[]; zipcode_count?: number }> {
+    const response = await axiosInstance.get('/api/v1/clusters/check-name', {
+      params: { name },
+    });
+    return response.data;
+  },
 };

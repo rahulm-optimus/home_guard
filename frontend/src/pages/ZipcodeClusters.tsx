@@ -96,13 +96,20 @@ const ZipcodeClusters: React.FC = () => {
 
   const handleDialogSubmit = async (data: ClusterFormData) => {
     try {
+      let response;
       if (dialogMode === 'add') {
-        await estimateService.createCluster({
+        response = await estimateService.createCluster({
           name: data.name,
           zipcodes: data.zipcodes,
           description: data.description,
         });
-        setSuccessMessage('Cluster created successfully');
+        // Check if it was actually an update (backend updates existing cluster with same name)
+        const message = response.message || 'Cluster created successfully';
+        if (message.includes('updated')) {
+          setSuccessMessage(`Cluster "${data.name}" already existed and was updated successfully`);
+        } else {
+          setSuccessMessage('Cluster created successfully');
+        }
       } else {
         await estimateService.updateCluster(data.id!, {
           name: data.name,

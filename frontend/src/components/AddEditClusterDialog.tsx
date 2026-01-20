@@ -14,6 +14,7 @@ import {
   Alert,
 } from '@mui/material';
 import { Close as CloseIcon, Add as AddIcon } from '@mui/icons-material';
+import { estimateService } from '../services/estimate.service';
 
 interface AddEditClusterDialogProps {
   open: boolean;
@@ -45,6 +46,13 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
   const [zipcodeInput, setZipcodeInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [existingCluster, setExistingCluster] = useState<{
+    exists: boolean;
+    cluster_id?: string;
+    name?: string;
+    zipcode_count?: number;
+  } | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -59,6 +67,8 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
       }
       setZipcodeInput('');
       setError(null);
+      setExistingCluster(null);
+      setShowConfirmDialog(false);
     }
   }, [open, mode, editData]);
 
@@ -92,6 +102,22 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
     });
   };
 
+  const handleNameBlur = async () => {
+    // Only check for duplicates in 'add' mode and when name is not empty
+    if (mode !== 'add' || !formData.name.trim()) {
+      setExistingCluster(null);
+      return;
+    }
+
+    try {
+      const result = await estimateService.checkClusterName(formData.name.trim());
+      setExistingCluster(result);
+    } catch (err) {
+      console.error('Failed to check cluster name:', err);
+      setExistingCluster(null);
+    }
+  };
+
   const handleSubmit = async () => {
     setError(null);
 
@@ -106,6 +132,17 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
       return;
     }
 
+    // In add mode, check if cluster exists and show confirmation
+    if (mode === 'add' && existingCluster?.exists) {
+      setShowConfirmDialog(true);
+      return;
+    }
+
+    // Proceed with save
+    await performSave();
+  };
+
+  const performSave = async () => {
     setLoading(true);
     try {
       await onSubmit(formData);
@@ -115,6 +152,11 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleConfirmOverwrite = async () => {
+    setShowConfirmDialog(false);
+    await performSave();
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -146,14 +188,23 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
           )}
 
           {/* Cluster Name */}
-          <TextField
-            label="Cluster Name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            fullWidth
-            required
-            placeholder="Bay Area East"
-          />
+          <Box>
+            <TextField
+              label="Cluster Name"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onBlur={handleNameBlur}
+              fullWidth
+              required
+              placeholder="Bay Area East"
+            />
+            {mode === 'add' && existingCluster?.exists && (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                Cluster "{existingCluster.name}" already exists with {existingCluster.zipcode_count} zipcode(s). 
+                Submitting will replace them with your new zipcodes.
+              </Alert>
+            )}
+          </Box>
 
           {/* Description */}
           <TextField
@@ -229,6 +280,30 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
           {loading ? 'Saving...' : mode === 'add' ? 'Create Cluster' : 'Update Cluster'}
         </Button>
       </DialogActions>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showConfirmDialog} onClose={() => setShowConfirmDialog(false)} maxWidth="xs">
+        <DialogTitle>Confirm Update</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Cluster "{existingCluster?.name}" already exists with {existingCluster?.zipcode_count} zipcode(s). 
+            Are you sure you want to replace them with your {formData.zipcodes.length} new zipcode(s)?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowConfirmDialog(false)} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmOverwrite}
+            variant="contained"
+            color="warning"
+            disabled={loading}
+          >
+            {loading ? 'Updating...' : 'Yes, Update Cluster'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };

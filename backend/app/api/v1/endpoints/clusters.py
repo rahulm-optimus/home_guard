@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def normalize_cluster_name(name: str) -> str:
+    """Normalize cluster name by trimming and collapsing multiple spaces to single space."""
+    return ' '.join(name.strip().split())
+
+
 @router.post("/clusters", summary="Create a new zipcode cluster", response_model=ClusterResponse)
 async def create_cluster(
     request: CreateClusterRequest = Body(..., description="Cluster creation request"),
@@ -25,13 +30,15 @@ async def create_cluster(
 ) -> ClusterResponse:
     """
     Create a new zipcode cluster in Cosmos DB.
+    If a cluster with the same name already exists (case-insensitive, trimmed),
+    it will update the existing cluster instead.
     
     Args:
         request: CreateClusterRequest with cluster details
         cosmos_service: Injected CosmosDBService instance
         
     Returns:
-        ClusterResponse with status and created cluster data
+        ClusterResponse with status and created/updated cluster data
         
     Example Request:
     ```json
@@ -42,43 +49,60 @@ async def create_cluster(
     }
     ```
     """
-    # Generate GUID for cluster ID
-    cluster_id = str(uuid.uuid4())
-    logger.info(f"Creating cluster: {cluster_id}")
+    # Normalize the cluster name
+    normalized_name = normalize_cluster_name(request.name)
+    logger.info(f"Creating/updating cluster: {normalized_name}")
     
     try:
-        # Create cluster document
-        cluster_data = {
-            "id": cluster_id,
-            "name": request.name,
-            "zipcodes": request.zipcodes,
-            "description": request.description or "",
-            "created_at": datetime.utcnow().isoformat() + "Z",
-            "updated_at": datetime.utcnow().isoformat() + "Z"
-        }
+        # Check if cluster with same name exists
+        existing_cluster = cosmos_service.find_cluster_by_name(normalized_name)
         
-        # Save cluster to cluster container
-        result = await cosmos_service.save_clusters([cluster_data])
-        
-        if result["failed_count"] > 0:
-            # Check for duplicate name error
-            failed_item = result["failed_items"][0] if result["failed_items"] else {}
-            if failed_item.get("error_type") == "duplicate_name":
-                logger.error(f"Duplicate cluster name: {request.name}")
-                raise HTTPException(status_code=409, detail="Cluster name already exists")
-            else:
+        if existing_cluster:
+            # Update existing cluster
+            logger.info(f"Cluster '{normalized_name}' already exists (id={existing_cluster['id']}), updating...")
+            existing_cluster["name"] = normalized_name
+            existing_cluster["zipcodes"] = request.zipcodes
+            existing_cluster["description"] = request.description or ""
+            existing_cluster["updated_at"] = datetime.utcnow().isoformat() + "Z"
+            
+            result = await cosmos_service.save_clusters([existing_cluster])
+            
+            if result["failed_count"] > 0:
+                logger.error(f"Failed to update cluster {existing_cluster['id']}")
+                raise HTTPException(status_code=500, detail="Failed to update cluster")
+            
+            saved_cluster = result["saved_items"][0]["data"]
+            logger.info(f"Successfully updated cluster {existing_cluster['id']}")
+            return ClusterResponse(
+                status="success",
+                message="Cluster updated successfully",
+                data=saved_cluster
+            )
+        else:
+            # Create new cluster
+            cluster_id = str(uuid.uuid4())
+            cluster_data = {
+                "id": cluster_id,
+                "name": normalized_name,
+                "zipcodes": request.zipcodes,
+                "description": request.description or "",
+                "created_at": datetime.utcnow().isoformat() + "Z",
+                "updated_at": datetime.utcnow().isoformat() + "Z"
+            }
+            
+            result = await cosmos_service.save_clusters([cluster_data])
+            
+            if result["failed_count"] > 0:
                 logger.error(f"Failed to create cluster {cluster_id}")
                 raise HTTPException(status_code=500, detail="Failed to create cluster")
-        
-        # Get the saved cluster data
-        saved_cluster = result["saved_items"][0]["data"]
-        
-        logger.info(f"Successfully created cluster {cluster_id}")
-        return ClusterResponse(
-            status="success",
-            message="Cluster created successfully",
-            data=saved_cluster
-        )
+            
+            saved_cluster = result["saved_items"][0]["data"]
+            logger.info(f"Successfully created cluster {cluster_id}")
+            return ClusterResponse(
+                status="success",
+                message="Cluster created successfully",
+                data=saved_cluster
+            )
         
     except HTTPException:
         raise
@@ -128,6 +152,14 @@ async def update_cluster(
         
         for key, value in update_data.items():
             if value is not None:
+                # Normalize cluster name if being updated
+                if key == "name":
+                    value = normalize_cluster_name(value)
+                    # Check if another cluster has this name
+                    duplicate = cosmos_service.find_cluster_by_name(value, exclude_id=cluster_id)
+                    if duplicate:
+                        logger.error(f"Duplicate cluster name: {value}")
+                        raise HTTPException(status_code=409, detail="Cluster name already exists")
                 existing_cluster[key] = value
         
         # Update timestamp
@@ -139,14 +171,8 @@ async def update_cluster(
         result = await cosmos_service.save_clusters([existing_cluster])
         
         if result["failed_count"] > 0:
-            # Check for duplicate name error
-            failed_item = result["failed_items"][0] if result["failed_items"] else {}
-            if failed_item.get("error_type") == "duplicate_name":
-                logger.error(f"Duplicate cluster name: {existing_cluster.get('name')}")
-                raise HTTPException(status_code=409, detail="Cluster name already exists")
-            else:
-                logger.error(f"Failed to update cluster {cluster_id}")
-                raise HTTPException(status_code=500, detail="Failed to update cluster")
+            logger.error(f"Failed to update cluster {cluster_id}")
+            raise HTTPException(status_code=500, detail="Failed to update cluster")
         
         # Get the saved cluster data
         saved_cluster = result["saved_items"][0]["data"]
@@ -163,6 +189,41 @@ async def update_cluster(
     except Exception as e:
         logger.error(f"Unexpected error updating cluster {cluster_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+
+@router.get("/clusters/check-name", summary="Check if a cluster name already exists")
+async def check_cluster_name(
+    name: str = Query(..., description="Cluster name to check"),
+    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+) -> dict:
+    """
+    Check if a cluster with the given name already exists (case-insensitive, trimmed).
+    
+    Args:
+        name: The cluster name to check
+        cosmos_service: Injected CosmosDBService instance
+        
+    Returns:
+        dict with exists flag and cluster details if found
+    """
+    try:
+        normalized_name = normalize_cluster_name(name)
+        existing_cluster = cosmos_service.find_cluster_by_name(normalized_name)
+        
+        if existing_cluster:
+            return {
+                "exists": True,
+                "cluster_id": existing_cluster.get("id"),
+                "name": existing_cluster.get("name"),
+                "zipcodes": existing_cluster.get("zipcodes", []),
+                "zipcode_count": len(existing_cluster.get("zipcodes", []))
+            }
+        else:
+            return {"exists": False}
+    
+    except Exception as e:
+        logger.error(f"Error checking cluster name: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to check cluster name: {str(e)}")
 
 
 @router.get("/clusters", response_model=GetClustersResponse, summary="Get all clusters with pagination")

@@ -18,6 +18,7 @@ class SaveFlatItemInput(BaseModel):
     min_estimate: float
     max_estimate: float
     zipcode: str
+    clusterId: Optional[str] = Field(None, description="Optional cluster ID reference")
 
 
 class SaveCostEstimatesRequest(BaseModel):
@@ -51,6 +52,37 @@ class UpdateCostEstimateResponse(BaseModel):
     status: str = Field(..., description="Operation status", example="success")
     message: str = Field(..., description="Operation message", example="Item updated successfully")
     item_id: str = Field(..., description="ID of the updated item")
+
+
+# ============ Cluster Schemas ============
+
+class CreateClusterRequest(BaseModel):
+    """Request for creating a new zipcode cluster"""
+    name: str = Field(..., min_length=1, description="Display name of the cluster")
+    zipcodes: list[str] = Field(..., min_items=1, description="List of zipcodes in this cluster")
+    description: Optional[str] = Field(None, description="Optional description of the cluster")
+
+
+class UpdateClusterRequest(BaseModel):
+    """Request for updating an existing zipcode cluster"""
+    name: Optional[str] = Field(None, min_length=1, description="Updated display name")
+    zipcodes: Optional[list[str]] = Field(None, min_items=1, description="Updated list of zipcodes")
+    description: Optional[str] = Field(None, description="Updated description")
+
+
+class ClusterResponse(BaseModel):
+    """Response containing cluster data"""
+    status: str = Field(..., description="Operation status", example="success")
+    message: str = Field(..., description="Operation message")
+    data: Optional[dict] = Field(None, description="Cluster data")
+
+
+class GetClustersResponse(BaseModel):
+    """Response from get clusters endpoint"""
+    status: str = Field(..., description="Operation status")
+    status_code: int = Field(..., description="HTTP status code")
+    message: str = Field(..., description="Response message")
+    data: dict = Field(..., description="Paginated clusters with metadata")
 
 
 # ============ Request Schemas ============
@@ -176,6 +208,7 @@ class SaveItemInput(BaseModel):
     # address: str = Field(..., description="Full address")  # COMMENTED OUT - Testing removal
     username: str = Field(..., description="Username/owner")
     status: str = Field(default="pending", description="Item status")
+    clusterId: Optional[str] = Field(None, description="Optional cluster ID reference")
     
     model_config = {
         "json_schema_extra": {

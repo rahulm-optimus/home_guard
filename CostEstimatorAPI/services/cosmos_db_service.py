@@ -6,13 +6,16 @@ from azure.cosmos import CosmosClient
 COSMOS_DB_ENDPOINT = os.environ.get("COSMOS_DB_ENDPOINT")
 COSMOS_DB_KEY = os.environ.get("COSMOS_DB_KEY")
 COSMOS_DB_DATABASE_NAME = os.environ.get("COSMOS_DB_DATABASE_NAME", "homeguard")
+
 COSMOS_DB_CONTAINER_NAME = os.environ.get("COSMOS_DB_CONTAINER_NAME", "items")
+COSMOS_DB_CLUSTER_CONTAINER_NAME = os.environ.get("COSMOS_DB_CLUSTER_CONTAINER_NAME", "clusters")
 
 class CosmosDBService:
     def __init__(self):
         self.client = CosmosClient(COSMOS_DB_ENDPOINT, credential=COSMOS_DB_KEY)
         self.database = self.client.get_database_client(COSMOS_DB_DATABASE_NAME)
         self.container = self.database.get_container_client(COSMOS_DB_CONTAINER_NAME)
+        self.cluster_container = self.database.get_container_client(COSMOS_DB_CLUSTER_CONTAINER_NAME)
 
     def save_flat_items(self, items):
         saved_count = 0
@@ -79,3 +82,31 @@ class CosmosDBService:
             enable_cross_partition_query=True
         ))
         return items[0] if items else None
+
+    def get_all_clusters(self, offset=0, limit=10, search=""):
+        query = "SELECT * FROM c"
+        if search:
+            search_escaped = search.replace("'", "''")
+            query += f" WHERE CONTAINS(LOWER(c.name), LOWER('{search_escaped}')) OR CONTAINS(LOWER(c.description), LOWER('{search_escaped}'))"
+        query += " ORDER BY c.created_at DESC OFFSET @offset LIMIT @limit"
+        items = list(self.cluster_container.query_items(
+            query=query,
+            parameters=[{"name": "@offset", "value": offset}, {"name": "@limit", "value": limit}],
+            enable_cross_partition_query=True
+        ))
+        count_query = "SELECT VALUE COUNT(1) FROM c"
+        if search:
+            count_query += f" WHERE CONTAINS(LOWER(c.name), LOWER('{search_escaped}')) OR CONTAINS(LOWER(c.description), LOWER('{search_escaped}'))"
+        total_count = list(self.cluster_container.query_items(
+            query=count_query,
+            enable_cross_partition_query=True
+        ))
+        total_count = total_count[0] if total_count else 0
+        returned_count = len(items)
+        return {
+            "items": items,
+            "total_count": total_count,
+            "offset": offset,
+            "limit": limit,
+            "returned_count": returned_count
+        }

@@ -88,6 +88,32 @@ def get_items(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         return func.HttpResponse(
             json.dumps({"error": "Internal server error", "message": str(e)}),
+            status_code=500,)
+
+# /clusters (GET)
+@app.route(route="v1/clusters", methods=["GET"])
+def get_clusters(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        offset = int(req.params.get("offset", 0))
+        limit = int(req.params.get("limit", 10))
+        search = req.params.get("search", "")
+        cosmos_service = CosmosDBService()
+        result = cosmos_service.get_all_clusters(offset=offset, limit=limit, search=search)
+        message = f"Retrieved {result['returned_count']} clusters out of {result['total_count']} total"
+        response = GetItemsResponse(
+            data=result,
+            status="success",
+            status_code=200,
+            message=message
+        )
+        return func.HttpResponse(
+            response.json(),
+            status_code=200,
+            mimetype="application/json"
+        )
+    except Exception as e:
+        return func.HttpResponse(
+            json.dumps({"error": "Internal server error", "message": str(e)}),
             status_code=500,
             mimetype="application/json"
         )

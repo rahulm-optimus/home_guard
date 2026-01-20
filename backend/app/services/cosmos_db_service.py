@@ -22,6 +22,7 @@ class CosmosDBService:
         self.client: Optional[CosmosClient] = None
         self.database = None
         self.container = None
+        self.cluster_container = None
         self._initialize()
 
     def _initialize(self):
@@ -46,10 +47,17 @@ class CosmosDBService:
                 offer_throughput=400
             )
 
+            self.cluster_container = self.database.create_container_if_not_exists(
+                id=settings.COSMOS_DB_CLUSTER_CONTAINER_NAME,
+                partition_key=PartitionKey(path="/id"),
+                offer_throughput=400
+            )
+
             logger.info(
                 f"Cosmos DB initialized: "
                 f"{settings.COSMOS_DB_DATABASE_NAME}/"
-                f"{settings.COSMOS_DB_CONTAINER_NAME}"
+                f"{settings.COSMOS_DB_CONTAINER_NAME}, "
+                f"{settings.COSMOS_DB_CLUSTER_CONTAINER_NAME}"
             )
 
         except Exception as e:
@@ -59,6 +67,15 @@ class CosmosDBService:
                 status_code=500,
                 error_code=ErrorCodes.COSMOS_DB_ERROR
             )
+
+    # ------------------------------------------------------------------
+    # HELPER METHODS
+    # ------------------------------------------------------------------
+
+    def _remove_system_fields(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove Cosmos DB system fields from a document"""
+        system_fields = ['_rid', '_self', '_etag', '_attachments', '_ts']
+        return {k: v for k, v in item.items() if k not in system_fields}
 
     # ------------------------------------------------------------------
     # CRUD OPERATIONS
@@ -106,6 +123,164 @@ class CosmosDBService:
             logger.error(f"Failed to retrieve item: {str(e)}")
             raise APIError(
                 message=f"Failed to retrieve item from Cosmos DB: {str(e)}",
+                status_code=500,
+                error_code=ErrorCodes.COSMOS_DB_ERROR
+            )
+
+    # ------------------------------------------------------------------
+    # CLUSTER OPERATIONS
+    # ------------------------------------------------------------------
+
+    def get_cluster(self, cluster_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a single cluster by ID"""
+        if not self.cluster_container:
+            logger.warning("Cluster container not configured. Cannot retrieve cluster.")
+            return None
+
+        try:
+            cluster = self.cluster_container.read_item(
+                item=cluster_id,
+                partition_key=cluster_id
+            )
+            return self._remove_system_fields(cluster)
+
+        except exceptions.CosmosResourceNotFoundError:
+            logger.info(f"Cluster not found: {cluster_id}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve cluster: {str(e)}")
+            raise APIError(
+                message=f"Failed to retrieve cluster from Cosmos DB: {str(e)}",
+                status_code=500,
+                error_code=ErrorCodes.COSMOS_DB_ERROR
+            )
+
+    async def save_clusters(self, clusters: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Save/upsert clusters to the cluster container"""
+        if not self.cluster_container:
+            logger.warning("Cluster container not configured. Running in mock mode.")
+            return self._mock_save_items(clusters)
+
+        saved_clusters = []
+        failed_clusters = []
+
+        for cluster in clusters:
+            try:
+                if not isinstance(cluster, dict):
+                    cluster = dict(cluster)
+
+                if not cluster.get("id"):
+                    cluster["id"] = str(uuid.uuid4())
+
+                result = self.cluster_container.upsert_item(body=cluster)
+                cleaned_result = self._remove_system_fields(result)
+
+                saved_clusters.append({
+                    "id": cleaned_result.get("id"),
+                    "status": "saved",
+                    "data": cleaned_result
+                })
+
+                logger.info(f"Saved cluster: {cleaned_result.get('id')}")
+
+            except exceptions.CosmosHttpResponseError as e:
+                error_msg = str(e)
+                # Check for unique key constraint violation
+                if "Conflict" in error_msg or "unique" in error_msg.lower():
+                    logger.error(f"Duplicate cluster name: {cluster.get('name')}")
+                    failed_clusters.append({
+                        "id": cluster.get("id"),
+                        "error": "Cluster name already exists",
+                        "error_type": "duplicate_name"
+                    })
+                else:
+                    logger.error(f"Failed to save cluster: {error_msg}")
+                    failed_clusters.append({
+                        "id": cluster.get("id"),
+                        "error": error_msg
+                    })
+
+            except Exception as e:
+                logger.error(f"Failed to save cluster: {str(e)}")
+                failed_clusters.append({
+                    "id": cluster.get("id"),
+                    "error": str(e)
+                })
+
+        return {
+            "total_items": len(clusters),
+            "saved_count": len(saved_clusters),
+            "failed_count": len(failed_clusters),
+            "saved_items": saved_clusters,
+            "failed_items": failed_clusters or None
+        }
+
+    def get_all_clusters(self, offset: int = 0, limit: int = 10, search: str = "") -> Dict[str, Any]:
+        """Retrieve all clusters with pagination and search support"""
+        if not self.cluster_container:
+            logger.warning("Cluster container not configured. Running in mock mode.")
+            return {
+                "items": [],
+                "total_count": 0,
+                "offset": offset,
+                "limit": limit,
+                "returned_count": 0,
+                "note": "Cluster container not configured"
+            }
+
+        try:
+            # Build query with search if provided
+            if search:
+                search_escaped = search.replace("'", "''")
+                query = (
+                    "SELECT * FROM c "
+                    f"WHERE CONTAINS(LOWER(c.name), LOWER('{search_escaped}')) "
+                    f"OR CONTAINS(LOWER(c.description), LOWER('{search_escaped}')) "
+                    "ORDER BY c.created_at DESC "
+                    f"OFFSET {offset} LIMIT {limit}"
+                )
+                count_query = (
+                    "SELECT VALUE COUNT(1) FROM c "
+                    f"WHERE CONTAINS(LOWER(c.name), LOWER('{search_escaped}')) "
+                    f"OR CONTAINS(LOWER(c.description), LOWER('{search_escaped}'))"
+                )
+            else:
+                query = (
+                    "SELECT * FROM c "
+                    "ORDER BY c.created_at DESC "
+                    f"OFFSET {offset} LIMIT {limit}"
+                )
+                count_query = "SELECT VALUE COUNT(1) FROM c"
+
+            # Execute query
+            items = list(self.cluster_container.query_items(
+                query=query,
+                enable_cross_partition_query=True
+            ))
+
+            # Remove system fields from all items
+            cleaned_items = [self._remove_system_fields(item) for item in items]
+
+            # Get total count
+            count_result = list(self.cluster_container.query_items(
+                query=count_query,
+                enable_cross_partition_query=True
+            ))
+            count = count_result[0] if count_result else 0
+
+            return {
+                "items": cleaned_items,
+                "total_count": count,
+                "offset": offset,
+                "limit": limit,
+                "returned_count": len(cleaned_items)
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve clusters: {str(e)}")
+            raise APIError(
+                message=f"Failed to retrieve clusters from Cosmos DB: {str(e)}",
                 status_code=500,
                 error_code=ErrorCodes.COSMOS_DB_ERROR
             )

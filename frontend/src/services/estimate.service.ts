@@ -62,4 +62,27 @@ export const estimateService = {
     );
     return response.data;
   },
+
+  async getClusters(offset: number = 0, limit: number = 10, search: string = ''): Promise<GetItemsResponse> {
+    const response = await axiosInstance.get<GetItemsResponse>('/api/v1/clusters', {
+      params: { offset, limit, search },
+    });
+    return response.data;
+  },
+
+  /**
+   * Create a new cluster
+   */
+  async createCluster(data: { name: string; zipcodes: string[]; description?: string }): Promise<any> {
+    const response = await axiosInstance.post('/api/v1/clusters', data);
+    return response.data;
+  },
+
+  /**
+   * Update an existing cluster
+   */
+  async updateCluster(clusterId: string, data: { name?: string; zipcodes?: string[]; description?: string }): Promise<any> {
+    const response = await axiosInstance.put(`/api/v1/clusters/${clusterId}`, data);
+    return response.data;
+  },
 };

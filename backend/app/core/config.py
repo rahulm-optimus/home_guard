@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     COSMOS_DB_KEY: Optional[str] = None
     COSMOS_DB_DATABASE_NAME: str = "homeguard"
     COSMOS_DB_CONTAINER_NAME: str = "items"
+    COSMOS_DB_CLUSTER_CONTAINER_NAME: str = "zipcodeClusters"
 
     # Azure AI Foundry Agent Configuration
     AZURE_TENANT_ID: Optional[str] = None

@@ -23,9 +23,11 @@ import {
   Storage as StorageIcon,
   Chat as ChatIcon,
   Menu as MenuIcon,
+  LocationOn as LocationOnIcon,
 } from '@mui/icons-material';
 import SavedItems from './pages/SavedItems';
 import ChatEstimation from './pages/ChatEstimation';
+import ZipcodeClusters from './pages/ZipcodeClusters';
 import NotFound from './pages/NotFound';
 import ErrorBoundary from './components/ErrorBoundary';
 import logo from './assets/homeguard-incorporated-logo.png';
@@ -178,6 +180,7 @@ const menuItems = [
   // { text: 'Cost Estimation', icon: <MoneyIcon />, path: '/estimation' },
   { text: 'Cost Advisor', icon: <ChatIcon />, path: '/chatbot' },
   { text: 'Saved Items', icon: <StorageIcon />, path: '/saved-items' },
+  { text: 'Zipcode Clusters', icon: <LocationOnIcon />, path: '/zipcode-clusters' },
 ];
 
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -404,6 +407,7 @@ function App() {
               {/* <Route path="/estimation" element={<CostEstimation />} /> */}
               <Route path="/chatbot" element={<ChatEstimation />} />
               <Route path="/saved-items" element={<SavedItems />} />
+              <Route path="/zipcode-clusters" element={<ZipcodeClusters />} />
               <Route path="/404" element={<NotFound />} />
               <Route path="*" element={<Navigate to="/404" replace />} />
             </Routes>

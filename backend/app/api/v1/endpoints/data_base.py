@@ -57,6 +57,7 @@ async def get_items(
     
     This endpoint fetches items with offset and limit for pagination control.
     Items are ordered by creation timestamp (newest first).
+    If items have a clusterId, the cluster's zipcodes are included in the response.
     
     Args:
         offset: Number of items to skip (default: 0)
@@ -87,6 +88,20 @@ async def get_items(
     # Get paginated items
     result = cosmos_service.get_all_items(offset=offset, limit=limit)
     
+    # Enrich items with cluster zipcodes if clusterId is present
+    for item in result['items']:
+        cluster_id = item.get('clusterId')
+        if cluster_id:
+            cluster = cosmos_service.get_cluster(cluster_id)
+            if cluster:
+                item['cluster_zipcodes'] = cluster.get('zipcodes', [])
+                item['cluster_name'] = cluster.get('name', '')
+                logger.info(f"Enriched item {item.get('id')} with cluster {cluster_id} zipcodes")
+            else:
+                logger.warning(f"Cluster {cluster_id} not found for item {item.get('id')}")
+                item['cluster_zipcodes'] = []
+                item['cluster_name'] = None
+    
     message = f"Retrieved {result['returned_count']} items out of {result['total_count']} total"
     
     return GetItemsResponse(
@@ -109,6 +124,7 @@ async def search_items(
     
     This endpoint performs a case-insensitive search on the message field
     and returns matching items with pagination.
+    If items have a clusterId, the cluster's zipcodes are included in the response.
     
     Args:
         search_query: Search text to find in message field (required)
@@ -143,6 +159,20 @@ async def search_items(
         offset=offset,
         limit=limit
     )
+    
+    # Enrich items with cluster zipcodes if clusterId is present
+    for item in result['items']:
+        cluster_id = item.get('clusterId')
+        if cluster_id:
+            cluster = cosmos_service.get_cluster(cluster_id)
+            if cluster:
+                item['cluster_zipcodes'] = cluster.get('zipcodes', [])
+                item['cluster_name'] = cluster.get('name', '')
+                logger.info(f"Enriched item {item.get('id')} with cluster {cluster_id} zipcodes")
+            else:
+                logger.warning(f"Cluster {cluster_id} not found for item {item.get('id')}")
+                item['cluster_zipcodes'] = []
+                item['cluster_name'] = None
     
     message = f"Found {result['returned_count']} items matching '{search_query}' out of {result['total_count']} total"
     

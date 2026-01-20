@@ -13,16 +13,22 @@ import {
   Chip,
   Stack,
   Divider,
+  Menu,
+  MenuItem,
+  ListItemText,
+  Tooltip,
 } from '@mui/material';
 import {
   Send as SendIcon,
   SmartToy as BotIcon,
   Person as PersonIcon,
   KeyboardArrowDown as DownIcon,
+  LocationOn as LocationIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { estimateService } from '../services/estimate.service';
 
 interface Message {
   id: string;
@@ -54,6 +60,9 @@ const ChatEstimation: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [clusters, setClusters] = useState<any[]>([]);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [loadingClusters, setLoadingClusters] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +87,45 @@ const ChatEstimation: React.FC = () => {
   useEffect(() => {
     scrollToBottom(false);
   }, [messages]);
+
+  /* ---------- Load Clusters ---------- */
+
+  const loadClusters = async () => {
+    setLoadingClusters(true);
+    try {
+      const response = await estimateService.getClusters(0, 100);
+      setClusters(response.data.items || []);
+    } catch (err) {
+      console.error('Failed to load clusters:', err);
+    } finally {
+      setLoadingClusters(false);
+    }
+  };
+
+  const handleClusterMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+    if (clusters.length === 0) {
+      loadClusters();
+    }
+  };
+
+  const handleClusterMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleClusterSelect = (cluster: any) => {
+    const zipcodes = cluster.zipcodes.join(', ');
+    const clusterText = `Cluster: ${cluster.name} (Zipcodes: ${zipcodes})`;
+    
+    // Append cluster info to the input
+    if (inputMessage.trim()) {
+      setInputMessage(`${inputMessage} - ${clusterText}`);
+    } else {
+      setInputMessage(clusterText);
+    }
+    
+    handleClusterMenuClose();
+  };
 
   /* ---------- Stream Initial Bot Message ---------- */
 
@@ -242,33 +290,23 @@ const ChatEstimation: React.FC = () => {
             })}
 
             {isLoading && (
-              <ListItem sx={{ justifyContent: 'flex-start' }}>
-                <Avatar sx={{ border: '1px solid #0078d4', mr: 1 }}>
-                  <BotIcon fontSize="small" />
-                </Avatar>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CircularProgress size={16} />
-                  <Typography>Assistant is thinking…</Typography>
-                </Box>
+              <ListItem sx={{ justifyContent: 'center' }}>
+                <CircularProgress size={24} />
               </ListItem>
             )}
-
-            <div ref={messagesEndRef} />
           </List>
 
-          {/* Scroll To Bottom Button */}
+          {/* Scroll to bottom button */}
           {showScrollToBottom && (
             <IconButton
               onClick={() => scrollToBottom(true)}
               sx={{
-                position: 'sticky',
+                position: 'absolute',
                 bottom: 16,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                bgcolor: '#0078d4',
-                color: 'white',
-                boxShadow: 3,
-                '&:hover': { bgcolor: '#005a9e' },
+                right: 16,
+                bgcolor: 'white',
+                boxShadow: 2,
+                '&:hover': { bgcolor: '#f5f5f5' },
               }}
             >
               <DownIcon />
@@ -276,11 +314,23 @@ const ChatEstimation: React.FC = () => {
           )}
         </Box>
 
-        <Divider />
-
         {/* Input (Fixed Bottom) */}
         <Box sx={{ p: 2, bgcolor: '#fff' }}>
           <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Select Zipcode Cluster">
+              <IconButton
+                onClick={handleClusterMenuOpen}
+                sx={{
+                  border: '1px solid #e0e0e0',
+                  height: 44,
+                  width: 44,
+                  '&:hover': { bgcolor: '#f5f5f5' },
+                }}
+              >
+                <LocationIcon />
+              </IconButton>
+            </Tooltip>
+
             <TextField
               fullWidth
               multiline
@@ -318,6 +368,42 @@ const ChatEstimation: React.FC = () => {
             ))}
           </Stack>
         </Box>
+
+        {/* Cluster Dropdown Menu */}
+        <Menu
+          anchorEl={anchorEl}
+          open={Boolean(anchorEl)}
+          onClose={handleClusterMenuClose}
+          PaperProps={{
+            sx: {
+              maxHeight: 400,
+              width: 350,
+            },
+          }}
+        >
+          {loadingClusters ? (
+            <MenuItem disabled>
+              <CircularProgress size={20} sx={{ mr: 1 }} />
+              Loading clusters...
+            </MenuItem>
+          ) : clusters.length === 0 ? (
+            <MenuItem disabled>No clusters available</MenuItem>
+          ) : (
+            clusters.map((cluster) => (
+              <MenuItem
+                key={cluster.id}
+                onClick={() => handleClusterSelect(cluster)}
+                sx={{ flexDirection: 'column', alignItems: 'flex-start', py: 1.5 }}
+              >
+                <ListItemText
+                  primary={cluster.name}
+                  secondary={`${cluster.zipcodes.length} zipcodes: ${cluster.zipcodes.slice(0, 3).join(', ')}${cluster.zipcodes.length > 3 ? '...' : ''}`}
+                  primaryTypographyProps={{ fontWeight: 600 }}
+                />
+              </MenuItem>
+            ))
+          )}
+        </Menu>
       </Paper>
     </Box>
   );

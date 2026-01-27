@@ -11,7 +11,8 @@ class SaveCostEstimateItem(BaseModel):
     currency: str
     min_estimate: float
     max_estimate: float
-    zipcode: str
+    zipcodes: List[str]
+    cluster_name: str
 
 class SaveCostEstimatesRequest(BaseModel):
     items: List[SaveCostEstimateItem]

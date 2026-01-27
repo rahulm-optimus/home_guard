@@ -44,8 +44,26 @@ def save_flat_items(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         cosmos_service = CosmosDBService()
-        items = [item.dict() for item in request_model.items]
-        result = cosmos_service.save_flat_items(items)
+        
+        # Expand items: create one item per zipcode
+        expanded_items = []
+        for item in request_model.items:
+            item_dict = item.dict()
+            zipcodes = item_dict.pop('zipcodes')  # Remove zipcodes array
+            cluster_name = item_dict.get('cluster_name')
+            
+            # Create one item for each zipcode
+            for zipcode in zipcodes:
+                new_item = item_dict.copy()
+                new_item['zipcode'] = zipcode  # Single zipcode string
+                new_item['cluster_name'] = cluster_name
+                # Generate unique ID for each zipcode item
+                if 'id' not in new_item or not new_item.get('id'):
+                    import uuid
+                    new_item['id'] = str(uuid.uuid4())
+                expanded_items.append(new_item)
+        
+        result = cosmos_service.save_flat_items(expanded_items)
 
         response = SaveCostEstimatesResponse(
             status="success" if result["failed_count"] == 0 else "partial_success",

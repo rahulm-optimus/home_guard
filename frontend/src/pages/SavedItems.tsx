@@ -31,6 +31,7 @@ import EditItemDialog, { EditItemFormData } from '../components/EditItemDialog';
 
 const SavedItems: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
+  const [groupedItems, setGroupedItems] = useState<any[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -70,11 +71,49 @@ const SavedItems: React.FC = () => {
       }
       setItems(response.data.items);
       setTotalCount(response.data.total_count);
+      
+      // Group items by cluster_name and message
+      const grouped = groupItemsByClusterAndMessage(response.data.items);
+      setGroupedItems(grouped);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to fetch saved items');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Group items by cluster_name and message
+  const groupItemsByClusterAndMessage = (items: any[]) => {
+    const groups: { [key: string]: any } = {};
+    
+    items.forEach((item) => {
+      // Create a unique key based on cluster_name and message
+      const key = `${item.cluster_name || 'Unknown'}_${item.message}`;
+      
+      if (!groups[key]) {
+        groups[key] = {
+          cluster_name: item.cluster_name || 'Unknown',
+          message: item.message,
+          status: item.status,
+          type: item.type,
+          currency: item.currency,
+          dateOfCreation: item.dateOfCreation || item.dateofcreation,
+          thread_id: item.thread_id,
+          min_estimate: item.min_estimate,
+          max_estimate: item.max_estimate,
+          zipcodes: [item.zipcode],
+          items: [item], // Keep reference to all items in this group
+        };
+      } else {
+        // Add zipcode to the group
+        if (!groups[key].zipcodes.includes(item.zipcode)) {
+          groups[key].zipcodes.push(item.zipcode);
+        }
+        groups[key].items.push(item);
+      }
+    });
+    
+    return Object.values(groups);
   };
 
   useEffect(() => {
@@ -235,11 +274,11 @@ const SavedItems: React.FC = () => {
       )}
 
       {/* Cards */}
-      {!loading && items.length > 0 && (
+      {!loading && groupedItems.length > 0 && (
         <Stack spacing={2}>
-          {items.map((item) => (
+          {groupedItems.map((group, index) => (
             <Card
-              key={item.id}
+              key={`${group.cluster_name}-${group.message}-${index}`}
               variant="outlined"
               sx={{
                 borderLeft: '4px solid',
@@ -256,13 +295,13 @@ const SavedItems: React.FC = () => {
                         fontWeight={600}
                         sx={{ flexGrow: 1 }}
                       >
-                        {item.message}
+                        {group.message}
                       </Typography>
 
                       <Tooltip title="Copy message">
                         <IconButton
                           size="small"
-                          onClick={() => handleCopy(item.message)}
+                          onClick={() => handleCopy(group.message)}
                           sx={{ mt: '2px' }}
                         >
                           <ContentCopyIcon fontSize="small" />
@@ -271,12 +310,12 @@ const SavedItems: React.FC = () => {
                     </Box>
                     <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 1 }}>
                       <Chip
-                        label={`Min: $${item.min_estimate?.toLocaleString()}`}
+                        label={`Min: $${group.min_estimate?.toLocaleString()}`}
                         color="success"
                         size="small"
                       />
                       <Chip
-                        label={`Max: $${item.max_estimate?.toLocaleString()}`}
+                        label={`Max: $${group.max_estimate?.toLocaleString()}`}
                         color="error"
                         size="small"
                       />
@@ -295,7 +334,7 @@ const SavedItems: React.FC = () => {
                       color="primary"
                       size="small"
                       startIcon={<EditIcon />}
-                      onClick={() => handleEditClick(item)}
+                      onClick={() => handleEditClick(group.items[0])}
                     >
                       Edit
                     </Button>
@@ -305,16 +344,23 @@ const SavedItems: React.FC = () => {
                 <Divider sx={{ my: 2 }} />
                 <Stack direction="row" spacing={1} flexWrap="wrap">
                   <Chip
-                    label={`Date: ${formatLocalDateTime(item.dateOfCreation || item.dateofcreation)}`}
+                    label={`Date: ${formatLocalDateTime(group.dateOfCreation)}`}
                     variant="outlined"
                     size="small"
                   />
                   <Chip
-                    label={`Zipcode: ${item.zipcode}`}
+                    label={`Cluster: ${group.cluster_name}`}
                     variant="outlined"
                     size="small"
+                    color="primary"
+                    sx={{ fontWeight: 600 }}
                   />
-
+                  <Chip
+                    label={`${group.zipcodes.length} Zipcode${group.zipcodes.length > 1 ? 's' : ''}`}
+                    variant="outlined"
+                    size="small"
+                    color="secondary"
+                  />
                 </Stack>
               </CardContent>
             </Card>
@@ -337,7 +383,7 @@ const SavedItems: React.FC = () => {
       )}
 
       {/* Empty State */}
-      {!loading && items.length === 0 && (
+      {!loading && groupedItems.length === 0 && (
         <Box
           sx={{
             p: 8,

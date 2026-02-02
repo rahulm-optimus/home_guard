@@ -83,6 +83,18 @@ class CosmosDBService:
         ))
         return items[0] if items else None
 
+    def get_item_by_cluster(self, item_id, cluster_name):
+        """Get item by id and cluster_name (new partition key structure)"""
+        items = list(self.container.query_items(
+            query="SELECT * FROM c WHERE c.id=@item_id AND c.cluster_name=@cluster_name",
+            parameters=[
+                {"name": "@item_id", "value": item_id},
+                {"name": "@cluster_name", "value": cluster_name}
+            ],
+            enable_cross_partition_query=True
+        ))
+        return items[0] if items else None
+
     def get_all_clusters(self, offset=0, limit=10, search=""):
         query = "SELECT * FROM c"
         if search:
@@ -110,3 +122,36 @@ class CosmosDBService:
             "limit": limit,
             "returned_count": returned_count
         }
+
+    def find_cluster_by_zipcode(self, zipcode):
+        """
+        Find a cluster that contains the given zipcode.
+        
+        Args:
+            zipcode: The zipcode to search for
+            
+        Returns:
+            The cluster document if found, None otherwise
+        """
+        try:
+            # Query to find cluster containing this zipcode
+            query = "SELECT * FROM c WHERE ARRAY_CONTAINS(c.zipcodes, @zipcode)"
+            parameters = [{"name": "@zipcode", "value": zipcode}]
+            
+            results = list(self.cluster_container.query_items(
+                query=query,
+                parameters=parameters,
+                enable_cross_partition_query=True,
+                max_item_count=1
+            ))
+            
+            if results:
+                # Remove Cosmos DB system fields
+                cluster = results[0]
+                system_fields = ['_rid', '_self', '_etag', '_attachments', '_ts']
+                return {k: v for k, v in cluster.items() if k not in system_fields}
+            return None
+            
+        except Exception as e:
+            logging.error(f"Failed to search for cluster by zipcode: {str(e)}")
+            return None

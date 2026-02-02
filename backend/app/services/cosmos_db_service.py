@@ -103,21 +103,44 @@ class CosmosDBService:
             logger.error(f"Failed to delete item {item_id}: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-    def get_item(self, item_id: str, zipcode: str) -> Optional[Dict[str, Any]]:
-        """Retrieve a single item"""
+    def get_item(self, item_id: str, partition_key_value: str, fallback_partition_key: str = None) -> Optional[Dict[str, Any]]:
+        """Retrieve a single item with support for multiple partition keys
+        
+        Args:
+            item_id: The item ID
+            partition_key_value: Primary partition key value (e.g., cluster_name)
+            fallback_partition_key: Fallback partition key value (e.g., zipcode) to try if first fails
+        """
         if not self.container:
             logger.warning("Cosmos DB not configured. Cannot retrieve item.")
             return None
 
+        # Try with primary partition key
         try:
-            return self.container.read_item(
+            item = self.container.read_item(
                 item=item_id,
-                partition_key=str(zipcode)
+                partition_key=str(partition_key_value)
             )
+            logger.info(f"Item {item_id} found with partition key: {partition_key_value}")
+            return item
 
         except exceptions.CosmosResourceNotFoundError:
-            logger.info(f"Item not found: {item_id}")
-            return None
+            # If fallback partition key is provided, try with it
+            if fallback_partition_key:
+                logger.info(f"Item {item_id} not found with partition key {partition_key_value}, trying fallback {fallback_partition_key}")
+                try:
+                    item = self.container.read_item(
+                        item=item_id,
+                        partition_key=str(fallback_partition_key)
+                    )
+                    logger.info(f"Item {item_id} found with fallback partition key: {fallback_partition_key}")
+                    return item
+                except exceptions.CosmosResourceNotFoundError:
+                    logger.info(f"Item {item_id} not found with either partition key")
+                    return None
+            else:
+                logger.info(f"Item not found: {item_id}")
+                return None
 
         except Exception as e:
             logger.error(f"Failed to retrieve item: {str(e)}")
@@ -280,17 +303,34 @@ class CosmosDBService:
             # Build query with search if provided
             if search:
                 search_escaped = search.replace("'", "''")
+                
+                # Handle comma-separated zipcodes
+                zipcodes = [z.strip() for z in search_escaped.split(',') if z.strip()]
+                
+                # Build zipcode search conditions
+                if len(zipcodes) > 1:
+                    # Multiple zipcodes: create OR conditions for each
+                    # Escape single quotes for each zipcode first
+                    escaped_zipcodes = [zc.replace("'", "''") for zc in zipcodes]
+                    zipcode_conditions = " OR ".join([f"CONTAINS(z, '{zc}') " for zc in escaped_zipcodes])
+                    zipcode_search = f"EXISTS(SELECT VALUE z FROM z IN c.zipcodes WHERE {zipcode_conditions})"
+                else:
+                    # Single search term (could be name, description, or single zipcode)
+                    zipcode_search = f"EXISTS(SELECT VALUE z FROM z IN c.zipcodes WHERE CONTAINS(z, '{search_escaped}'))"
+                
                 query = (
                     "SELECT * FROM c "
                     f"WHERE CONTAINS(LOWER(c.name), LOWER('{search_escaped}')) "
                     f"OR CONTAINS(LOWER(c.description), LOWER('{search_escaped}')) "
+                    f"OR {zipcode_search} "
                     "ORDER BY c.created_at DESC "
                     f"OFFSET {offset} LIMIT {limit}"
                 )
                 count_query = (
                     "SELECT VALUE COUNT(1) FROM c "
                     f"WHERE CONTAINS(LOWER(c.name), LOWER('{search_escaped}')) "
-                    f"OR CONTAINS(LOWER(c.description), LOWER('{search_escaped}'))"
+                    f"OR CONTAINS(LOWER(c.description), LOWER('{search_escaped}')) "
+                    f"OR {zipcode_search}"
                 )
             else:
                 query = (

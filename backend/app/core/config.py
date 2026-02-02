@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     COSMOS_DB_ENDPOINT: Optional[str] = None
     COSMOS_DB_KEY: Optional[str] = None
     COSMOS_DB_DATABASE_NAME: str = "homeguard"
-    COSMOS_DB_CONTAINER_NAME: str = "items"
+    COSMOS_DB_CONTAINER_NAME: str = "estimates"
     COSMOS_DB_CLUSTER_CONTAINER_NAME: str = "zipcodeClusters"
 
     # Azure AI Foundry Agent Configuration

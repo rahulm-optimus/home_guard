@@ -54,11 +54,11 @@ export const estimateService = {
   /**
    * Update an existing item in Cosmos DB
    */
-  async updateItem(itemId: string, zipcode: string, data: UpdateItemRequest): Promise<UpdateItemResponse> {
+  async updateItem(itemId: string, clusterName: string, zipcode: string, data: UpdateItemRequest): Promise<UpdateItemResponse> {
     const response = await axiosInstance.put<UpdateItemResponse>(
       `/api/v1/update-item/${itemId}`,
       data,
-      { params: { zipcode } }
+      { params: { cluster_name: clusterName, zipcode } }
     );
     return response.data;
   },

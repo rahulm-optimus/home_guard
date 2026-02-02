@@ -44,6 +44,7 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
     description: '',
   });
   const [zipcodeInput, setZipcodeInput] = useState('');
+  const [bulkZipcodeInput, setBulkZipcodeInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [existingCluster, setExistingCluster] = useState<{
@@ -66,6 +67,7 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
         });
       }
       setZipcodeInput('');
+      setBulkZipcodeInput('');
       setError(null);
       setExistingCluster(null);
       setShowConfirmDialog(false);
@@ -166,6 +168,43 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
     }
   };
 
+  const handleAddBulkZipcodes = () => {
+    const input = bulkZipcodeInput.trim();
+    if (!input) return;
+
+    // Split by comma and clean up
+    const zipcodes = input.split(',').map(z => z.trim()).filter(z => z);
+    
+    // Validate all zipcodes
+    const invalidZipcodes = zipcodes.filter(z => !/^\d{5}$/.test(z));
+    if (invalidZipcodes.length > 0) {
+      setError(`Invalid zipcode(s): ${invalidZipcodes.join(', ')}. All zipcodes must be 5 digits.`);
+      return;
+    }
+
+    // Check for duplicates within input
+    const uniqueZipcodes = [...new Set(zipcodes)];
+    if (uniqueZipcodes.length !== zipcodes.length) {
+      setError('Duplicate zipcodes found in input');
+      return;
+    }
+
+    // Check for duplicates with existing zipcodes
+    const duplicates = uniqueZipcodes.filter(z => formData.zipcodes.includes(z));
+    if (duplicates.length > 0) {
+      setError(`Zipcode(s) already added: ${duplicates.join(', ')}`);
+      return;
+    }
+
+    // Add all valid zipcodes
+    setFormData({
+      ...formData,
+      zipcodes: [...formData.zipcodes, ...uniqueZipcodes],
+    });
+    setBulkZipcodeInput('');
+    setError(null);
+  };
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>
@@ -219,26 +258,56 @@ const AddEditClusterDialog: React.FC<AddEditClusterDialogProps> = ({
 
           {/* Zipcode Input */}
           <Box>
-            <TextField
-              label="Add Zipcode"
-              value={zipcodeInput}
-              onChange={(e) => setZipcodeInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              fullWidth
-              placeholder="Enter 5-digit zipcode"
-              helperText="Press Enter or click + to add"
-              InputProps={{
-                endAdornment: (
-                  <IconButton
-                    onClick={handleAddZipcode}
-                    color="primary"
-                    disabled={!zipcodeInput.trim()}
-                  >
-                    <AddIcon />
-                  </IconButton>
-                ),
-              }}
-            />
+            <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+              Add Zipcodes
+            </Typography>
+            <Stack spacing={2}>
+              {/* Single Zipcode Input */}
+              <TextField
+                label="Single Zipcode"
+                value={zipcodeInput}
+                onChange={(e) => setZipcodeInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                fullWidth
+                placeholder="Enter 5-digit zipcode"
+                helperText="Press Enter or click + to add"
+                InputProps={{
+                  endAdornment: (
+                    <IconButton
+                      onClick={handleAddZipcode}
+                      color="primary"
+                      disabled={!zipcodeInput.trim()}
+                    >
+                      <AddIcon />
+                    </IconButton>
+                  ),
+                }}
+              />
+              
+              {/* Bulk Zipcode Input */}
+              <TextField
+                label="Bulk Zipcodes (Comma-Separated)"
+                value={bulkZipcodeInput}
+                onChange={(e) => setBulkZipcodeInput(e.target.value)}
+                fullWidth
+                multiline
+                rows={2}
+                placeholder="94551, 94552, 94553"
+                helperText="Enter multiple 5-digit zipcodes separated by commas"
+                InputProps={{
+                  endAdornment: (
+                    <IconButton
+                      onClick={handleAddBulkZipcodes}
+                      color="primary"
+                      disabled={!bulkZipcodeInput.trim()}
+                      sx={{ alignSelf: 'flex-start', mt: 0.5 }}
+                    >
+                      <AddIcon />
+                    </IconButton>
+                  ),
+                }}
+              />
+            </Stack>
           </Box>
 
           {/* Zipcode Chips */}

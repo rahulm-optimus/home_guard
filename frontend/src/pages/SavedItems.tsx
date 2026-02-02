@@ -135,7 +135,8 @@ const SavedItems: React.FC = () => {
     try {
       await estimateService.updateItem(
         selectedItem.id,
-        selectedItem.zipcode,
+        selectedItem.cluster_name || 'Unknown',
+        selectedItem.zipcode || selectedItem.zipcodes?.[0] || '',
         { item: formData }
       );
       setSuccessMessage('Cost Estimate updated successfully');
@@ -354,12 +355,6 @@ const SavedItems: React.FC = () => {
                     size="small"
                     color="primary"
                     sx={{ fontWeight: 600 }}
-                  />
-                  <Chip
-                    label={`${group.zipcodes.length} Zipcode${group.zipcodes.length > 1 ? 's' : ''}`}
-                    variant="outlined"
-                    size="small"
-                    color="secondary"
                   />
                 </Stack>
               </CardContent>

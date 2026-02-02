@@ -1,0 +1,525 @@
+{
+  "openapi": "3.0.2",
+  "info": {
+    "title": "Cost Estimate Persistence API",
+    "description": "API for saving and updating cost estimate results into Azure Cosmos DB, and managing zipcode clusters. Items are indexed by message (description) and cluster_name.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://9l9k8fvx-7071.inc1.devtunnels.ms/",
+      "description": "Cosmos DB Save API"
+    }
+  ],
+  "paths": {
+    "/api/v1/save-items": {
+      "post": {
+        "tags": [
+          "CosmosDB"
+        ],
+        "summary": "Save cost estimate items",
+        "description": "Persists one or more cost estimate records into Cosmos DB. Items are indexed by message (description) and cluster_name.",
+        "operationId": "saveCostEstimates",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCostEstimatesRequest"
+              },
+              "example": {
+                "items": [
+                  {
+                    "status": "approved",
+                    "thread_id": "thread_abc123",
+                    "dateOfCreation": "2026-01-27T10:30:00Z",
+                    "type": "home_repair",
+                    "message": "Tile repair",
+                    "currency": "USD",
+                    "min_estimate": 350,
+                    "max_estimate": 550,
+                    "cluster_name": "Bay Area East"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Items saved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveCostEstimatesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/update-item/{item_id}": {
+      "put": {
+        "tags": [
+          "CosmosDB"
+        ],
+        "summary": "Update an existing cost estimate item",
+        "description": "Updates specified fields of an existing cost estimate item in Cosmos DB.",
+        "operationId": "updateCostEstimate",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "description": "Unique identifier of the item to update",
+            "schema": {
+              "type": "string",
+              "example": "e6bc31cd-df47-4848-a703-46420a302a70"
+            }
+          },
+          {
+            "name": "cluster_name",
+            "in": "query",
+            "required": true,
+            "description": "Cluster name (partition key) for the item",
+            "schema": {
+              "type": "string",
+              "example": "Bay Area East"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCostEstimateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Item updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateCostEstimateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clusters": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "summary": "Get all zipcode clusters with pagination",
+        "description": "Retrieve all zipcode clusters from Cosmos DB.",
+        "operationId": "getClusters",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": ""
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Clusters retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetClustersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cluster-by-zipcode": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "summary": "Find cluster by zipcode",
+        "description": "Determines which cluster a specific zipcode belongs to. This is used before querying historical data to identify the cluster context.",
+        "operationId": "getClusterByZipcode",
+        "parameters": [
+          {
+            "name": "zipcode",
+            "in": "query",
+            "required": true,
+            "description": "5-digit US zipcode",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{5}$",
+              "example": "94551"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cluster lookup result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterByZipcodeResponse"
+                },
+                "examples": {
+                  "found": {
+                    "summary": "Zipcode belongs to a cluster",
+                    "value": {
+                      "found": true,
+                      "cluster_id": "cluster-uuid-123",
+                      "cluster_name": "Bay Area East"
+                    }
+                  },
+                  "not_found": {
+                    "summary": "Zipcode does not belong to any cluster",
+                    "value": {
+                      "found": false,
+                      "cluster_id": null,
+                      "cluster_name": ""
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid zipcode format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SaveCostEstimatesRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaveCostEstimateItem"
+            }
+          }
+        }
+      },
+      "SaveCostEstimateItem": {
+        "type": "object",
+        "required": [
+          "status",
+          "thread_id",
+          "dateOfCreation",
+          "type",
+          "message",
+          "currency",
+          "min_estimate",
+          "max_estimate",
+          "cluster_name"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "approved"
+          },
+          "thread_id": {
+            "type": "string",
+            "example": "thread_abc123"
+          },
+          "dateOfCreation": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-27T10:30:00Z"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "home_repair",
+              "home_inspection"
+            ],
+            "example": "home_repair"
+          },
+          "message": {
+            "type": "string",
+            "description": "Description of the estimate (index key with cluster_name)",
+            "example": "Tile repair"
+          },
+          "currency": {
+            "type": "string",
+            "example": "USD"
+          },
+          "min_estimate": {
+            "type": "number",
+            "example": 350
+          },
+          "max_estimate": {
+            "type": "number",
+            "example": 550
+          },
+          "cluster_name": {
+            "type": "string",
+            "description": "Cluster name (partition key). Empty string if no cluster.",
+            "example": "Bay Area East"
+          }
+        }
+      },
+      "SaveCostEstimatesResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "success"
+          },
+          "saved_count": {
+            "type": "integer",
+            "example": 1
+          }
+        }
+      },
+      "UpdateCostEstimateRequest": {
+        "type": "object",
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/UpdateCostEstimateItem"
+          }
+        }
+      },
+      "UpdateCostEstimateItem": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "dateOfCreation": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string"
+          },
+          "min_estimate": {
+            "type": "number"
+          },
+          "max_estimate": {
+            "type": "number"
+          },
+          "estimate_scope": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateCostEstimateResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "item_id": {
+            "type": "string"
+          }
+        }
+      },
+      "GetClustersResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "status_code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ClusterItem"
+                }
+              },
+              "total_count": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "returned_count": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "ClusterItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "zipcodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ClusterByZipcodeResponse": {
+        "type": "object",
+        "required": [
+          "found",
+          "cluster_name"
+        ],
+        "properties": {
+          "found": {
+            "type": "boolean",
+            "description": "Whether the zipcode belongs to a cluster"
+          },
+          "cluster_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Cluster UUID (null if not found)"
+          },
+          "cluster_name": {
+            "type": "string",
+            "description": "Cluster name (empty string if not found)"
+          }
+        }
+      },
+      "HTTPError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "HTTPValidationError": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "loc": {
+            "type": "array",
+            "items": {}
+          },
+          "msg": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

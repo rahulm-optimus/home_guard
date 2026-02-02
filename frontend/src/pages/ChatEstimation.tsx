@@ -268,10 +268,11 @@ const ChatEstimation: React.FC = () => {
                       bgcolor: isUser ? '#e8f5e8' : '#ffffff',
                       p: 2,
                       borderRadius: 3,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                      // border: isUser ? '1px solid #81c784' : '1px solid #c0c0c0',
                     }}
                   >
-                    <Typography variant="caption" fontWeight={600}>
+                    <Typography variant="caption" fontWeight={600} sx={{ display: 'block', pb: 0.5, mb: 1, borderBottom: isUser ? '1px solid #0f5132' : '1px solid #808080' }}>
                       {isUser ? 'You' : 'Assistant'}
                     </Typography>
 
@@ -321,6 +322,7 @@ const ChatEstimation: React.FC = () => {
               <IconButton
                 onClick={handleClusterMenuOpen}
                 sx={{
+                  display: 'none',
                   border: '1px solid #e0e0e0',
                   height: 44,
                   width: 44,

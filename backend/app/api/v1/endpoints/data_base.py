@@ -186,7 +186,8 @@ async def search_items(
 @router.put("/update-item/{item_id}", summary="Update an existing cost estimate item", response_model=UpdateCostEstimateResponse)
 async def update_item(
     item_id: str,
-    zipcode: str = Query(..., description="Zipcode (partition key) for the item"),
+    cluster_name: str = Query(None, description="Cluster name (primary partition key) for the item"),
+    zipcode: str = Query(None, description="Zipcode (fallback partition key) for the item"),
     request: UpdateCostEstimateRequest = Body(..., description="Fields to update"),
     cosmos_service: CosmosDBService = Depends(get_cosmos_service)
 ) -> UpdateCostEstimateResponse:
@@ -221,14 +222,21 @@ async def update_item(
     }
     ```
     """
-    logger.info(f"Updating item {item_id} with zipcode {zipcode}")
+    # Determine partition key to use
+    if not cluster_name and not zipcode:
+        raise HTTPException(status_code=400, detail="Either cluster_name or zipcode must be provided")
+    
+    partition_key = cluster_name or zipcode
+    fallback_key = zipcode if cluster_name else None
+    
+    logger.info(f"Updating item {item_id} with partition key: {partition_key}" + (f", fallback: {fallback_key}" if fallback_key else ""))
     
     try:
-        # Fetch existing item to ensure it exists
-        existing_item = cosmos_service.get_item(item_id, zipcode)
+        # Fetch existing item to ensure it exists (tries cluster_name first, then zipcode)
+        existing_item = cosmos_service.get_item(item_id, partition_key, fallback_key)
         
         if existing_item is None:
-            logger.warning(f"Item {item_id} not found for update")
+            logger.warning(f"Item {item_id} not found for update with partition keys tried")
             raise HTTPException(status_code=404, detail=f"Item with id '{item_id}' not found")
         
         # Remove Cosmos DB system fields (read-only fields that start with _)
@@ -243,13 +251,23 @@ async def update_item(
             if value is not None:
                 item_data[key] = value
         
-        logger.info(f"Merged update fields: {list(update_data.keys())}")
+        # Ensure required partition key fields are present
+        # The existing item should already have these, but ensure they're not removed
+        if 'cluster_name' not in item_data and cluster_name:
+            item_data['cluster_name'] = cluster_name
+        if 'zipcode' not in item_data or not item_data.get('zipcode'):
+            # Get zipcode from existing item or use a valid value
+            item_data['zipcode'] = existing_item.get('zipcode', zipcode if zipcode else cluster_name)
+        
+        logger.info(f"Merged update fields: {list(update_data.keys())}, zipcode={item_data.get('zipcode')}, cluster_name={item_data.get('cluster_name')}")
         
         # Upsert the updated item
         result = await cosmos_service.save_flat_items([item_data])
         
         if result["failed_count"] > 0:
-            logger.error(f"Failed to update item {item_id}")
+            error_details = result.get("failed_items", [])
+            error_msg = error_details[0].get("error", "Unknown error") if error_details else "Unknown error"
+            logger.error(f"Failed to update item {item_id}: {error_msg}")
             raise HTTPException(status_code=500, detail="Failed to update item")
         
         logger.info(f"Successfully updated item {item_id}")

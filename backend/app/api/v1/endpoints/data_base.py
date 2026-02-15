@@ -1,15 +1,15 @@
 from fastapi import HTTPException
 """
 Save Endpoints
-API routes for saving items to Cosmos DB
+API routes for saving items to SQL Server
 """
 from fastapi import APIRouter, Depends, Query
-from app.schemas.requests import SaveItemsRequest, SaveItemsResponse, GetItemsResponse, SaveFlatItemInput, SaveCostEstimatesRequest, SaveCostEstimatesResponse, UpdateCostEstimateItem, UpdateCostEstimateRequest, UpdateCostEstimateResponse
+from app.schemas.requests import SaveItemsRequest, SaveItemsResponse, GetItemsResponse, SaveFlatItemInput, SaveCostEstimatesRequest, SaveCostEstimatesResponse, UpdateCostEstimateRequest, UpdateCostEstimateResponse
 
 # New endpoint for saving flat items
 from fastapi import Body
 
-from app.services.cosmos_db_service import get_cosmos_service, CosmosDBService
+from app.services.sql_db_service import get_sql_service, SQLServerService
 import logging
 
 
@@ -17,28 +17,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/save-items", summary="Save cost estimate items", response_model=SaveCostEstimatesResponse)
+@router.post("/save-items", summary="Save flat items to SQL Server")
 async def save_flat_items(
     request: SaveCostEstimatesRequest = Body(..., description="Cost estimates request with items array"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+    sql_service: SQLServerService = Depends(get_sql_service)
 ) -> SaveCostEstimatesResponse:
     """
-    Persists one or more cost estimate records into Cosmos DB.
+    Persists one or more cost estimate records into SQL Server.
     
     This endpoint accepts a request body with an 'items' array containing cost estimates,
-    saves them to Azure Cosmos DB, and returns the saved items with operation status.
+    saves them to SQL Server, and returns the saved items with operation status.
     
     Args:
         request: SaveCostEstimatesRequest containing list of items to save
-        cosmos_service: Injected CosmosDBService instance
+        sql_service: Injected SQLServerService instance
         
     Returns:
         SaveCostEstimatesResponse with status, statusCode, message, and estimatedItems
     """
     items = request.items
-    logger.info(f"Saving {len(items)} cost estimate items to Cosmos DB")
+    logger.info(f"Saving {len(items)} cost estimate items to SQL Server")
     
-    result = await cosmos_service.save_flat_items([item.dict() for item in items])
+    result = await sql_service.save_flat_items([item.dict() for item in items])
     
     return SaveCostEstimatesResponse(
         status="success" if result["failed_count"] == 0 else "partial_success",
@@ -50,19 +50,18 @@ async def save_flat_items(
 async def get_items(
     offset: int = Query(default=0, ge=0, description="Number of items to skip"),
     limit: int = Query(default=10, ge=1, le=100, description="Maximum number of items to return"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+    sql_service: SQLServerService = Depends(get_sql_service)
 ) -> GetItemsResponse:
     """
-    Retrieve all items from Cosmos DB with pagination support
+    Retrieve all items from SQL Server with pagination support
     
     This endpoint fetches items with offset and limit for pagination control.
     Items are ordered by creation timestamp (newest first).
-    If items have a clusterId, the cluster's zipcodes are included in the response.
     
     Args:
         offset: Number of items to skip (default: 0)
         limit: Maximum items to return (default: 10, max: 100)
-        cosmos_service: Injected CosmosDBService instance
+        sql_service: Injected SQLServerService instance
         
     Returns:
         GetItemsResponse with paginated items and metadata
@@ -86,21 +85,26 @@ async def get_items(
     logger.info(f"Fetching items with offset={offset}, limit={limit}")
     
     # Get paginated items
-    result = cosmos_service.get_all_items(offset=offset, limit=limit)
+    result = sql_service.get_all_items(offset=offset, limit=limit)
     
-    # Enrich items with cluster zipcodes if clusterId is present
+    # Log first item to debug
+    if result['items']:
+        logger.info(f"Sample item structure: {list(result['items'][0].keys())}")
+        logger.info(f"Sample item ID field: id={result['items'][0].get('id')}, thread_id={result['items'][0].get('thread_id')}")
+    
+    # Enrich items with cluster name if clusterId is present
     for item in result['items']:
         cluster_id = item.get('clusterId')
         if cluster_id:
-            cluster = cosmos_service.get_cluster(cluster_id)
-            if cluster:
-                item['cluster_zipcodes'] = cluster.get('zipcodes', [])
-                item['cluster_name'] = cluster.get('name', '')
-                logger.info(f"Enriched item {item.get('id')} with cluster {cluster_id} zipcodes")
-            else:
-                logger.warning(f"Cluster {cluster_id} not found for item {item.get('id')}")
-                item['cluster_zipcodes'] = []
-                item['cluster_name'] = None
+            try:
+                cluster = sql_service.get_cluster(cluster_id)
+                if cluster:
+                    item['cluster_name'] = cluster.get('name', '')
+                else:
+                    item['cluster_name'] = ''
+            except Exception as e:
+                logger.warning(f"Failed to get cluster {cluster_id}: {e}")
+                item['cluster_name'] = ''
     
     message = f"Retrieved {result['returned_count']} items out of {result['total_count']} total"
     
@@ -117,10 +121,10 @@ async def search_items(
     search_query: str = Query(..., description="Search query to filter items by message field"),
     offset: int = Query(default=0, ge=0, description="Number of items to skip"),
     limit: int = Query(default=10, ge=1, le=100, description="Maximum number of items to return"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+    sql_service: SQLServerService = Depends(get_sql_service)
 ) -> GetItemsResponse:
     """
-    Search items from Cosmos DB by message field with pagination support
+    Search items from SQL Server by message field with pagination support
     
     This endpoint performs a case-insensitive search on the message field
     and returns matching items with pagination.
@@ -130,7 +134,7 @@ async def search_items(
         search_query: Search text to find in message field (required)
         offset: Number of items to skip (default: 0)
         limit: Maximum items to return (default: 10, max: 100)
-        cosmos_service: Injected CosmosDBService instance
+        sql_service: Injected SQLServerService instance
         
     Returns:
         GetItemsResponse with paginated search results and metadata
@@ -154,25 +158,25 @@ async def search_items(
     logger.info(f"Searching items with query='{search_query}', offset={offset}, limit={limit}")
     
     # Search items by message
-    result = cosmos_service.search_items_by_message(
+    result = sql_service.search_items_by_message(
         search_query=search_query,
         offset=offset,
         limit=limit
     )
     
-    # Enrich items with cluster zipcodes if clusterId is present
+    # Enrich items with cluster name if clusterId is present
     for item in result['items']:
         cluster_id = item.get('clusterId')
         if cluster_id:
-            cluster = cosmos_service.get_cluster(cluster_id)
-            if cluster:
-                item['cluster_zipcodes'] = cluster.get('zipcodes', [])
-                item['cluster_name'] = cluster.get('name', '')
-                logger.info(f"Enriched item {item.get('id')} with cluster {cluster_id} zipcodes")
-            else:
-                logger.warning(f"Cluster {cluster_id} not found for item {item.get('id')}")
-                item['cluster_zipcodes'] = []
-                item['cluster_name'] = None
+            try:
+                cluster = sql_service.get_cluster(cluster_id)
+                if cluster:
+                    item['cluster_name'] = cluster.get('name', '')
+                else:
+                    item['cluster_name'] = ''
+            except Exception as e:
+                logger.warning(f"Failed to get cluster {cluster_id}: {e}")
+                item['cluster_name'] = ''
     
     message = f"Found {result['returned_count']} items matching '{search_query}' out of {result['total_count']} total"
     
@@ -189,10 +193,10 @@ async def update_item(
     cluster_name: str = Query(None, description="Cluster name (primary partition key) for the item"),
     zipcode: str = Query(None, description="Zipcode (fallback partition key) for the item"),
     request: UpdateCostEstimateRequest = Body(..., description="Fields to update"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+    sql_service: SQLServerService = Depends(get_sql_service)
 ) -> UpdateCostEstimateResponse:
     """
-    Update an existing cost estimate item in Cosmos DB.
+    Update an existing cost estimate item in SQL Server.
     
     This endpoint updates specified fields of an existing item while preserving
     immutable fields (id, zipcode, thread_id, type, currency). It guarantees that
@@ -200,9 +204,10 @@ async def update_item(
     
     Args:
         item_id: Unique identifier of the item to update
-        zipcode: Zipcode (partition key) for the item
+        cluster_name: Cluster name (primary partition key) for the item
+        zipcode: Zipcode (fallback partition key) for the item
         request: UpdateCostEstimateRequest containing fields to update
-        cosmos_service: Injected CosmosDBService instance
+        sql_service: Injected SQLServerService instance
         
     Returns:
         UpdateCostEstimateResponse with status and item_id
@@ -222,6 +227,13 @@ async def update_item(
     }
     ```
     """
+    # Log incoming request
+    logger.info(f"Update request - item_id: {item_id}, cluster_name: {cluster_name}, zipcode: {zipcode}, update_fields: {request.item.dict(exclude_unset=True)}")
+    
+    # Validate item_id
+    if not item_id or item_id == "null" or item_id == "undefined":
+        raise HTTPException(status_code=400, detail="Invalid item_id. Item ID is required and cannot be null.")
+    
     # Determine partition key to use
     if not cluster_name and not zipcode:
         raise HTTPException(status_code=400, detail="Either cluster_name or zipcode must be provided")
@@ -233,41 +245,28 @@ async def update_item(
     
     try:
         # Fetch existing item to ensure it exists (tries cluster_name first, then zipcode)
-        existing_item = cosmos_service.get_item(item_id, partition_key, fallback_key)
+        existing_item = sql_service.get_item(item_id, partition_key, fallback_key)
         
         if existing_item is None:
             logger.warning(f"Item {item_id} not found for update with partition keys tried")
             raise HTTPException(status_code=404, detail=f"Item with id '{item_id}' not found")
         
-        # Remove Cosmos DB system fields (read-only fields that start with _)
-        system_fields = ['_rid', '_self', '_etag', '_attachments', '_ts']
-        item_data = {k: v for k, v in existing_item.items() if k not in system_fields}
+        logger.info(f"Found existing item: {existing_item.get('id')}")
         
-        # Merge update fields into existing item
+        # Get update fields
         update_data = request.item.dict(exclude_unset=True)
         
-        # Update only the provided fields
-        for key, value in update_data.items():
-            if value is not None:
-                item_data[key] = value
+        if not update_data:
+            logger.warning("No fields provided for update")
+            raise HTTPException(status_code=400, detail="No fields provided for update")
         
-        # Ensure required partition key fields are present
-        # The existing item should already have these, but ensure they're not removed
-        if 'cluster_name' not in item_data and cluster_name:
-            item_data['cluster_name'] = cluster_name
-        if 'zipcode' not in item_data or not item_data.get('zipcode'):
-            # Get zipcode from existing item or use a valid value
-            item_data['zipcode'] = existing_item.get('zipcode', zipcode if zipcode else cluster_name)
+        logger.info(f"Updating fields: {list(update_data.keys())}")
         
-        logger.info(f"Merged update fields: {list(update_data.keys())}, zipcode={item_data.get('zipcode')}, cluster_name={item_data.get('cluster_name')}")
+        # Use the dedicated update method
+        success = await sql_service.update_item(item_id, update_data)
         
-        # Upsert the updated item
-        result = await cosmos_service.save_flat_items([item_data])
-        
-        if result["failed_count"] > 0:
-            error_details = result.get("failed_items", [])
-            error_msg = error_details[0].get("error", "Unknown error") if error_details else "Unknown error"
-            logger.error(f"Failed to update item {item_id}: {error_msg}")
+        if not success:
+            logger.error(f"Failed to update item {item_id}")
             raise HTTPException(status_code=500, detail="Failed to update item")
         
         logger.info(f"Successfully updated item {item_id}")

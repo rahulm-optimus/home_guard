@@ -19,7 +19,14 @@ class AgentService:
 
     def __init__(self):
         self.client = get_azure_ai_client()
-        self.agent_id = settings.AZURE_AGENT_ID
+        self.agent_id = settings.AZURE_CHAT_AGENT_ID
+        
+        if not self.agent_id:
+            raise ValueError(
+                "AZURE_CHAT_AGENT_ID is not configured. "
+                "Please set it in your .env file or environment variables."
+            )
+        
         logger.info(f"AgentService initialized with agent: {self.agent_id}")
 
     def chat(self, message: str, thread_id: Optional[str] = None) -> Dict[str, Any]:

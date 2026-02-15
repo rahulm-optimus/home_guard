@@ -1,6 +1,6 @@
 """
 Cluster Endpoints
-API routes for managing zipcode clusters in Cosmos DB
+API routes for managing zipcode clusters in SQL Server
 """
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from app.schemas.requests import (
@@ -9,7 +9,7 @@ from app.schemas.requests import (
     ClusterResponse,
     GetClustersResponse
 )
-from app.services.cosmos_db_service import get_cosmos_service, CosmosDBService
+from app.services.sql_db_service import get_sql_service, SQLServerService
 import logging
 from datetime import datetime
 import uuid
@@ -26,16 +26,16 @@ def normalize_cluster_name(name: str) -> str:
 @router.post("/clusters", summary="Create a new zipcode cluster", response_model=ClusterResponse)
 async def create_cluster(
     request: CreateClusterRequest = Body(..., description="Cluster creation request"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+    sql_service: SQLServerService = Depends(get_sql_service)
 ) -> ClusterResponse:
     """
-    Create a new zipcode cluster in Cosmos DB.
+    Create a new zipcode cluster in SQL Server.
     If a cluster with the same name already exists (case-insensitive, trimmed),
     it will update the existing cluster instead.
     
     Args:
         request: CreateClusterRequest with cluster details
-        cosmos_service: Injected CosmosDBService instance
+        sql_service: Injected SQLServerService instance
         
     Returns:
         ClusterResponse with status and created/updated cluster data
@@ -51,52 +51,45 @@ async def create_cluster(
     """
     # Normalize the cluster name
     normalized_name = normalize_cluster_name(request.name)
-    logger.info(f"Creating/updating cluster: {normalized_name}")
+    logger.info(f"Creating/updating cluster: {normalized_name} with {len(request.zipcodes)} zipcodes")
     
     try:
         # Check if cluster with same name exists
-        existing_cluster = cosmos_service.find_cluster_by_name(normalized_name)
+        existing_cluster = sql_service.find_cluster_by_name(normalized_name)
         
         if existing_cluster:
-            # Update existing cluster
+            # Update existing cluster using optimized method
             logger.info(f"Cluster '{normalized_name}' already exists (id={existing_cluster['id']}), updating...")
-            existing_cluster["name"] = normalized_name
-            existing_cluster["zipcodes"] = request.zipcodes
-            existing_cluster["description"] = request.description or ""
-            existing_cluster["updated_at"] = datetime.utcnow().isoformat() + "Z"
             
-            result = await cosmos_service.save_clusters([existing_cluster])
+            await sql_service.update_cluster(
+                cluster_id=existing_cluster['id'],
+                name=normalized_name,
+                description=request.description or "",
+                zipcodes=request.zipcodes
+            )
             
-            if result["failed_count"] > 0:
-                logger.error(f"Failed to update cluster {existing_cluster['id']}")
-                raise HTTPException(status_code=500, detail="Failed to update cluster")
-            
-            saved_cluster = result["saved_items"][0]["data"]
+            # Fetch the updated cluster
+            saved_cluster = sql_service.get_cluster(existing_cluster['id'])
             logger.info(f"Successfully updated cluster {existing_cluster['id']}")
+            
             return ClusterResponse(
                 status="success",
                 message="Cluster updated successfully",
                 data=saved_cluster
             )
         else:
-            # Create new cluster
-            cluster_id = str(uuid.uuid4())
-            cluster_data = {
-                "id": cluster_id,
-                "name": normalized_name,
-                "zipcodes": request.zipcodes,
-                "description": request.description or "",
-                "created_at": datetime.utcnow().isoformat() + "Z",
-                "updated_at": datetime.utcnow().isoformat() + "Z"
-            }
+            # Create new cluster using optimized method
+            logger.info(f"Creating new cluster: {normalized_name}")
             
-            result = await cosmos_service.save_clusters([cluster_data])
+            cluster_id = await sql_service.create_cluster(
+                name=normalized_name,
+                zipcodes=request.zipcodes,
+                description=request.description or ""
+            )
             
-            if result["failed_count"] > 0:
-                logger.error(f"Failed to create cluster {cluster_id}")
-                raise HTTPException(status_code=500, detail="Failed to create cluster")
+            # Fetch the newly created cluster
+            saved_cluster = sql_service.get_cluster(cluster_id)
             
-            saved_cluster = result["saved_items"][0]["data"]
             logger.info(f"Successfully created cluster {cluster_id}")
             return ClusterResponse(
                 status="success",
@@ -115,15 +108,15 @@ async def create_cluster(
 async def update_cluster(
     cluster_id: str,
     request: UpdateClusterRequest = Body(..., description="Cluster update request"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+    sql_service: SQLServerService = Depends(get_sql_service)
 ) -> ClusterResponse:
     """
-    Update an existing zipcode cluster in Cosmos DB.
+    Update an existing zipcode cluster in SQL Server.
     
     Args:
         cluster_id: Unique identifier of the cluster to update
         request: UpdateClusterRequest with fields to update
-        cosmos_service: Injected CosmosDBService instance
+        sql_service: Injected SQLServerService instance
         
     Returns:
         ClusterResponse with status and updated cluster data
@@ -140,48 +133,45 @@ async def update_cluster(
     logger.info(f"Updating cluster {cluster_id}")
     
     try:
-        # Fetch existing cluster from cluster container
-        existing_cluster = cosmos_service.get_cluster(cluster_id)
+        # Verify cluster exists
+        existing_cluster = sql_service.get_cluster(cluster_id)
         
         if existing_cluster is None:
             logger.warning(f"Cluster {cluster_id} not found for update")
             raise HTTPException(status_code=404, detail=f"Cluster with id '{cluster_id}' not found")
         
-        # Merge update fields
+        # Get update fields
         update_data = request.dict(exclude_unset=True)
         
-        for key, value in update_data.items():
-            if value is not None:
-                # Normalize cluster name if being updated
-                if key == "name":
-                    value = normalize_cluster_name(value)
-                    # Check if another cluster has this name
-                    duplicate = cosmos_service.find_cluster_by_name(value, exclude_id=cluster_id)
-                    if duplicate:
-                        logger.error(f"Duplicate cluster name: {value}")
-                        raise HTTPException(status_code=409, detail="Cluster name already exists")
-                existing_cluster[key] = value
+        # Normalize cluster name if being updated
+        new_name = update_data.get("name")
+        if new_name:
+            new_name = normalize_cluster_name(new_name)
+            # Check if another cluster has this name
+            duplicate = sql_service.find_cluster_by_name(new_name, exclude_id=cluster_id)
+            if duplicate:
+                logger.error(f"Duplicate cluster name: {new_name}")
+                raise HTTPException(status_code=409, detail="Cluster name already exists")
+            update_data["name"] = new_name
         
-        # Update timestamp
-        existing_cluster["updated_at"] = datetime.utcnow().isoformat() + "Z"
+        logger.info(f"Updating fields: {list(update_data.keys())}")
         
-        logger.info(f"Merged update fields: {list(update_data.keys())}")
+        # Use optimized update method
+        await sql_service.update_cluster(
+            cluster_id=cluster_id,
+            name=update_data.get("name"),
+            description=update_data.get("description"),
+            zipcodes=update_data.get("zipcodes")
+        )
         
-        # Upsert the updated cluster
-        result = await cosmos_service.save_clusters([existing_cluster])
-        
-        if result["failed_count"] > 0:
-            logger.error(f"Failed to update cluster {cluster_id}")
-            raise HTTPException(status_code=500, detail="Failed to update cluster")
-        
-        # Get the saved cluster data
-        saved_cluster = result["saved_items"][0]["data"]
+        # Fetch the updated cluster
+        updated_cluster = sql_service.get_cluster(cluster_id)
         
         logger.info(f"Successfully updated cluster {cluster_id}")
         return ClusterResponse(
             status="success",
             message="Cluster updated successfully",
-            data=saved_cluster
+            data=updated_cluster
         )
         
     except HTTPException:
@@ -194,21 +184,21 @@ async def update_cluster(
 @router.get("/clusters/check-name", summary="Check if a cluster name already exists")
 async def check_cluster_name(
     name: str = Query(..., description="Cluster name to check"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+    sql_service: SQLServerService = Depends(get_sql_service)
 ) -> dict:
     """
     Check if a cluster with the given name already exists (case-insensitive, trimmed).
     
     Args:
         name: The cluster name to check
-        cosmos_service: Injected CosmosDBService instance
+        sql_service: Injected SQLServerService instance
         
     Returns:
         dict with exists flag and cluster details if found
     """
     try:
         normalized_name = normalize_cluster_name(name)
-        existing_cluster = cosmos_service.find_cluster_by_name(normalized_name)
+        existing_cluster = sql_service.find_cluster_by_name(normalized_name)
         
         if existing_cluster:
             return {
@@ -231,16 +221,16 @@ async def get_clusters(
     offset: int = Query(default=0, ge=0, description="Number of items to skip"),
     limit: int = Query(default=10, ge=1, le=100, description="Maximum number of items to return"),
     search: str = Query(default="", description="Search query for cluster name or description"),
-    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
+    sql_service: SQLServerService = Depends(get_sql_service)
 ) -> GetClustersResponse:
     """
-    Retrieve all clusters from Cosmos DB with pagination and search support.
+    Retrieve all clusters from SQL Server with pagination and search support.
     
     Args:
         offset: Number of items to skip (default: 0)
         limit: Maximum items to return (default: 10, max: 100)
         search: Optional search query for filtering clusters
-        cosmos_service: Injected CosmosDBService instance
+        sql_service: Injected SQLServerService instance
         
     Returns:
         GetClustersResponse with paginated clusters and metadata
@@ -248,8 +238,8 @@ async def get_clusters(
     logger.info(f"Fetching clusters with offset={offset}, limit={limit}, search='{search}'")
     
     try:
-        # Get clusters from Cosmos DB
-        result = cosmos_service.get_all_clusters(offset=offset, limit=limit, search=search)
+        # Get clusters from SQL Server
+        result = sql_service.get_all_clusters(offset=offset, limit=limit, search=search)
         
         message = f"Retrieved {result['returned_count']} clusters out of {result['total_count']} total"
         
@@ -263,3 +253,81 @@ async def get_clusters(
     except Exception as e:
         logger.error(f"Error fetching clusters: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch clusters: {str(e)}")
+
+
+@router.get("/cluster-by-zipcode", summary="Find which cluster a zipcode belongs to")
+async def get_cluster_by_zipcode(
+    zipcode: str = Query(..., description="5-digit zipcode to search for"),
+    sql_service: SQLServerService = Depends(get_sql_service)
+):
+    """
+    Find which cluster a specific zipcode belongs to.
+    Returns cluster information if found, or null if zipcode doesn't belong to any cluster.
+    
+    Args:
+        zipcode: 5-digit zipcode to search for
+        sql_service: Injected SQLServerService instance
+        
+    Returns:
+        JSON with cluster information if found, or message if not found
+        
+    Example Response (found):
+    ```json
+    {
+        "found": true,
+        "cluster_id": "123",
+        "cluster_name": "Bay Area",
+        "zipcodes": ["94102", "94103", "94104"],
+        "description": "San Francisco Bay Area"
+    }
+    ```
+    
+    Example Response (not found):
+    ```json
+    {
+        "found": false,
+        "cluster_id": null,
+        "cluster_name": "",
+        "zipcodes": ["94999"],
+        "message": "Zipcode 94999 does not belong to any cluster"
+    }
+    ```
+    """
+    # Normalize zipcode (remove spaces, ensure 5 digits)
+    zipcode = zipcode.strip()
+    
+    if not zipcode.isdigit() or len(zipcode) != 5:
+        raise HTTPException(status_code=400, detail="Invalid zipcode format. Must be 5 digits.")
+    
+    logger.info(f"Searching for cluster containing zipcode: {zipcode}")
+    
+    try:
+        # Search for cluster containing this zipcode
+        cluster = sql_service.find_cluster_by_zipcode(zipcode)
+        
+        if cluster:
+            # Cluster found
+            response = {
+                "found": True,
+                "cluster_id": str(cluster.get("ClusterId")),
+                "cluster_name": cluster.get("Name", ""),
+                "zipcodes": cluster.get("zipcodes", []),
+                "description": cluster.get("Description", "")
+            }
+            logger.info(f"Found cluster '{cluster.get('Name')}' for zipcode {zipcode}")
+        else:
+            # No cluster found for this zipcode
+            response = {
+                "found": False,
+                "cluster_id": None,
+                "cluster_name": "",
+                "zipcodes": [zipcode],
+                "message": f"Zipcode {zipcode} does not belong to any cluster"
+            }
+            logger.info(f"No cluster found for zipcode {zipcode}")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error searching for cluster by zipcode {zipcode}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to search for cluster: {str(e)}")

@@ -73,7 +73,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "main:app",  # Must be string for reload mode
-        host="0.0.0.0",
+        host="localhost",
         port=8000,
         reload=settings.DEBUG
     )

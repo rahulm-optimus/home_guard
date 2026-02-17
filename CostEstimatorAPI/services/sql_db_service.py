@@ -1,6 +1,5 @@
 import os
 import logging
-import uuid
 import pyodbc
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -74,21 +73,20 @@ class SQLServerService:
 
     def _map_db_to_api(self, db_row: Dict[str, Any], cluster_name: Optional[str] = None) -> Dict[str, Any]:
         """Map SQL Server row to API response format"""
-        # Use BodyFindingID if ThreadID is None/NULL
-        thread_id = db_row.get("ThreadID")
-        item_id = thread_id if thread_id else str(db_row.get("BodyFindingID"))
+        # Use BodyFindID as the primary identifier
+        item_id = str(db_row.get("BodyFindID"))
         
         return {
             "id": item_id,
             "status": CostEstStatus.to_string(db_row.get("CostEstStatusID", 0)),
-            "thread_id": thread_id or "",
-            "dateOfCreation": db_row.get("CreatedDate").isoformat() if db_row.get("CreatedDate") else None,
+            "thread_id": "",
+            "dateOfCreation": None,
             "type": "home_repair",
             "message": db_row.get("FindingText", ""),
             "currency": "USD",
             "min_estimate": db_row.get("CostEstL", 0.0),
             "max_estimate": db_row.get("CostEstH", 0.0),
-            "zipcode": db_row.get("ZipCode", ""),
+            "zipcode": str(db_row.get("Zipcode", "")).zfill(5) if db_row.get("Zipcode") else "",
             "clusterId": str(db_row.get("ClusterId")) if db_row.get("ClusterId") else None,
             "cluster_name": cluster_name or "",
             "estimate_scope": "full",
@@ -103,12 +101,8 @@ class SQLServerService:
 
         for item in items:
             try:
-                # Generate ThreadID if not present (use id from API)
-                thread_id = item.get("id") or item.get("thread_id")
-                
-                # If no thread_id, generate one
-                if not thread_id:
-                    thread_id = str(uuid.uuid4())
+                # Get item ID
+                item_id = item.get("id") or item.get("thread_id")
                 
                 status_id = CostEstStatus.from_string(item.get("status", "need_estimate"))
                 
@@ -118,84 +112,74 @@ class SQLServerService:
                     zipcode = item.get("zipcode", "00000")
                     cluster_id = self._find_cluster_id_by_zipcode(cursor, zipcode)
 
-                # Try to convert to numeric ID for BodyFindingID comparison
+                # Try to convert to numeric ID for BodyFindID lookup
                 try:
-                    numeric_id = int(thread_id)
+                    numeric_id = int(item_id) if item_id else None
                 except (ValueError, TypeError):
                     numeric_id = None
 
-                # Check if this is an update (record exists with this ThreadID or BodyFindingID)
+                # Check if record exists with this BodyFindID
                 if numeric_id:
                     cursor.execute("""
-                        SELECT BodyFindingID FROM [dbo].[PlsBodyBodyData_BodyFindings] 
-                        WHERE (ThreadID = ? OR BodyFindingID = ?) AND IsDeleted = 0
-                    """, (thread_id, numeric_id))
-                else:
-                    cursor.execute("""
-                        SELECT BodyFindingID FROM [dbo].[PlsBodyBodyData_BodyFindings] 
-                        WHERE ThreadID = ? AND IsDeleted = 0
-                    """, (thread_id,))
-                existing = cursor.fetchone()
+                        SELECT BodyFindID FROM [dbo].[BodyFindings] 
+                        WHERE BodyFindID = ?
+                    """, (numeric_id,))
+                    existing = cursor.fetchone()
 
-                if existing:
-                    # Update existing record
-                    logging.info(f"Updating existing item with id: {thread_id}")
-                    if numeric_id:
+                    if existing:
+                        # Update existing record
+                        logging.info(f"Updating existing item with id: {numeric_id}")
                         cursor.execute("""
-                            UPDATE [dbo].[PlsBodyBodyData_BodyFindings]
+                            UPDATE [dbo].[BodyFindings]
                             SET FindingText = ?,
-                                ZipCode = ?,
+                                Zipcode = ?,
                                 CostEstL = ?,
                                 CostEstH = ?,
                                 ClusterId = ?,
-                                CostEstStatusID = ?,
-                                LastUpdated = SYSDATETIME(),
-                                ThreadID = ?
-                            WHERE (ThreadID = ? OR BodyFindingID = ?) AND IsDeleted = 0
+                                CostEstStatusID = ?
+                            WHERE BodyFindID = ?
                         """, (
                             item.get("message", ""),
-                            item.get("zipcode", "00000"),
+                            item.get("zipcode", ""),
                             item.get("min_estimate", 0.0),
                             item.get("max_estimate", 0.0),
                             cluster_id,
                             status_id,
-                            thread_id,
-                            thread_id,
                             numeric_id
                         ))
                     else:
+                        # Insert new record - get next available BodyFindID
+                        logging.info(f"Inserting new item")
+                        cursor.execute("SELECT ISNULL(MAX(BodyFindID), 0) + 1 FROM [dbo].[BodyFindings]")
+                        new_body_find_id = cursor.fetchone()[0]
+                        
                         cursor.execute("""
-                            UPDATE [dbo].[PlsBodyBodyData_BodyFindings]
-                            SET FindingText = ?,
-                                ZipCode = ?,
-                                CostEstL = ?,
-                                CostEstH = ?,
-                                ClusterId = ?,
-                                CostEstStatusID = ?,
-                                LastUpdated = SYSDATETIME(),
-                                ThreadID = ?
-                            WHERE ThreadID = ? AND IsDeleted = 0
+                            INSERT INTO [dbo].[BodyFindings] 
+                            (BodyFindID, FindingText, Zipcode, CostEstL, CostEstH, ClusterId, CostEstStatusID, NeedtoEdit)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
                         """, (
+                            new_body_find_id,
                             item.get("message", ""),
-                            item.get("zipcode", "00000"),
+                            item.get("zipcode", ""),
                             item.get("min_estimate", 0.0),
                             item.get("max_estimate", 0.0),
                             cluster_id,
-                            status_id,
-                            thread_id,
-                            thread_id
+                            status_id
                         ))
                 else:
-                    # Insert new record
-                    logging.info(f"Inserting new item with id: {thread_id}")
+                    # Insert new record without ID - get next available BodyFindID
+                    logging.info(f"Inserting new item")
+                    cursor.execute("SELECT ISNULL(MAX(BodyFindID), 0) + 1 FROM [dbo].[BodyFindings]")
+                    new_body_find_id = cursor.fetchone()[0]
+                    
                     cursor.execute("""
-                        INSERT INTO [dbo].[PlsBodyBodyData_BodyFindings] 
-                        (ThreadID, FindingText, ZipCode, CostEstL, CostEstH, ClusterId, CostEstStatusID, CreatedDate, LastUpdated, IsDeleted)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, SYSDATETIME(), SYSDATETIME(), 0)
+                        INSERT INTO [dbo].[BodyFindings] 
+                        (BodyFindID, FindingText, Zipcode, CostEstL, CostEstH, ClusterId, CostEstStatusID, NeedtoEdit)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
                     """, (
-                        thread_id,
+                        new_body_find_id,
                         item.get("message", ""),
-                        item.get("zipcode", "00000"),
+                        item.get("zipcode", ""),
                         item.get("min_estimate", 0.0),
                         item.get("max_estimate", 0.0),
                         cluster_id,
@@ -233,25 +217,23 @@ class SQLServerService:
 
         cursor.execute("""
             SELECT COUNT(*) 
-            FROM [dbo].[PlsBodyBodyData_BodyFindings]
-            WHERE IsDeleted = 0 AND (CostEstStatusID = 20 OR CostEstStatusID = 40)
+            FROM [dbo].[BodyFindings]
+            WHERE CostEstStatusID = 20 OR CostEstStatusID = 40
         """)
         total_count = cursor.fetchone()[0]
 
         cursor.execute("""
             SELECT 
-                bf.BodyFindingID,
-                bf.ThreadID,
+                bf.BodyFindID,
                 bf.FindingText,
-                bf.ZipCode,
+                bf.Zipcode,
                 bf.CostEstL,
                 bf.CostEstH,
                 bf.ClusterId,
-                bf.CostEstStatusID,
-                bf.CreatedDate
-            FROM [dbo].[PlsBodyBodyData_BodyFindings] bf
-            WHERE bf.IsDeleted = 0 AND (bf.CostEstStatusID = 20 OR bf.CostEstStatusID = 40)
-            ORDER BY bf.CreatedDate DESC
+                bf.CostEstStatusID
+            FROM [dbo].[BodyFindings] bf
+            WHERE bf.CostEstStatusID = 20 OR bf.CostEstStatusID = 40
+            ORDER BY bf.BodyFindID DESC
             OFFSET ? ROWS
             FETCH NEXT ? ROWS ONLY
         """, (offset, limit))
@@ -281,25 +263,23 @@ class SQLServerService:
 
         cursor.execute("""
             SELECT COUNT(*) 
-            FROM [dbo].[PlsBodyBodyData_BodyFindings]
-            WHERE IsDeleted = 0 AND FindingText LIKE ? AND (CostEstStatusID = 20 OR CostEstStatusID = 40)
+            FROM [dbo].[BodyFindings]
+            WHERE FindingText LIKE ? AND (CostEstStatusID = 20 OR CostEstStatusID = 40)
         """, (search_pattern,))
         total_count = cursor.fetchone()[0]
 
         cursor.execute("""
             SELECT 
-                bf.BodyFindingID,
-                bf.ThreadID,
+                bf.BodyFindID,
                 bf.FindingText,
-                bf.ZipCode,
+                bf.Zipcode,
                 bf.CostEstL,
                 bf.CostEstH,
                 bf.ClusterId,
-                bf.CostEstStatusID,
-                bf.CreatedDate
-            FROM [dbo].[PlsBodyBodyData_BodyFindings] bf
-            WHERE bf.IsDeleted = 0 AND bf.FindingText LIKE ? AND (bf.CostEstStatusID = 20 OR bf.CostEstStatusID = 40)
-            ORDER BY bf.CreatedDate DESC
+                bf.CostEstStatusID
+            FROM [dbo].[BodyFindings] bf
+            WHERE bf.FindingText LIKE ? AND (bf.CostEstStatusID = 20 OR bf.CostEstStatusID = 40)
+            ORDER BY bf.BodyFindID DESC
             OFFSET ? ROWS
             FETCH NEXT ? ROWS ONLY
         """, (search_pattern, offset, limit))
@@ -322,46 +302,29 @@ class SQLServerService:
         }
 
     def get_item(self, item_id, zipcode=None):
-        """Get item by id (ThreadID or BodyFindingID)"""
+        """Get item by id (BodyFindID)"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Try to convert item_id to int for BodyFindingID comparison
+        # Try to convert item_id to int for BodyFindID
         try:
             numeric_id = int(item_id)
         except (ValueError, TypeError):
-            numeric_id = None
+            logging.warning(f"Invalid item_id format: {item_id}")
+            return None
 
-        if numeric_id:
-            cursor.execute("""
-                SELECT 
-                    bf.BodyFindingID,
-                    bf.ThreadID,
-                    bf.FindingText,
-                    bf.ZipCode,
-                    bf.CostEstL,
-                    bf.CostEstH,
-                    bf.ClusterId,
-                    bf.CostEstStatusID,
-                    bf.CreatedDate
-                FROM [dbo].[PlsBodyBodyData_BodyFindings] bf
-                WHERE (bf.ThreadID = ? OR bf.BodyFindingID = ?) AND bf.IsDeleted = 0
-            """, (item_id, numeric_id))
-        else:
-            cursor.execute("""
-                SELECT 
-                    bf.BodyFindingID,
-                    bf.ThreadID,
-                    bf.FindingText,
-                    bf.ZipCode,
-                    bf.CostEstL,
-                    bf.CostEstH,
-                    bf.ClusterId,
-                    bf.CostEstStatusID,
-                    bf.CreatedDate
-                FROM [dbo].[PlsBodyBodyData_BodyFindings] bf
-                WHERE bf.ThreadID = ? AND bf.IsDeleted = 0
-            """, (item_id,))
+        cursor.execute("""
+            SELECT 
+                bf.BodyFindID,
+                bf.FindingText,
+                bf.Zipcode,
+                bf.CostEstL,
+                bf.CostEstH,
+                bf.ClusterId,
+                bf.CostEstStatusID
+            FROM [dbo].[BodyFindings] bf
+            WHERE bf.BodyFindID = ?
+        """, (numeric_id,))
 
         row = cursor.fetchone()
         
@@ -376,46 +339,29 @@ class SQLServerService:
         return None
 
     def get_item_by_cluster(self, item_id: str, cluster_name: str) -> Optional[Dict[str, Any]]:
-        """Get item by id and cluster_name"""
+        """Get item by id (BodyFindID)"""
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Try to convert item_id to int for BodyFindingID comparison
+        # Try to convert item_id to int for BodyFindID
         try:
             numeric_id = int(item_id)
         except (ValueError, TypeError):
-            numeric_id = None
+            logging.warning(f"Invalid item_id format: {item_id}")
+            return None
 
-        if numeric_id:
-            cursor.execute("""
-                SELECT 
-                    bf.BodyFindingID,
-                    bf.ThreadID,
-                    bf.FindingText,
-                    bf.ZipCode,
-                    bf.CostEstL,
-                    bf.CostEstH,
-                    bf.ClusterId,
-                    bf.CostEstStatusID,
-                    bf.CreatedDate
-                FROM [dbo].[PlsBodyBodyData_BodyFindings] bf
-                WHERE (bf.ThreadID = ? OR bf.BodyFindingID = ?) AND bf.IsDeleted = 0
-            """, (item_id, numeric_id))
-        else:
-            cursor.execute("""
-                SELECT 
-                    bf.BodyFindingID,
-                    bf.ThreadID,
-                    bf.FindingText,
-                    bf.ZipCode,
-                    bf.CostEstL,
-                    bf.CostEstH,
-                    bf.ClusterId,
-                    bf.CostEstStatusID,
-                    bf.CreatedDate
-                FROM [dbo].[PlsBodyBodyData_BodyFindings] bf
-                WHERE bf.ThreadID = ? AND bf.IsDeleted = 0
-            """, (item_id,))
+        cursor.execute("""
+            SELECT 
+                bf.BodyFindID,
+                bf.FindingText,
+                bf.Zipcode,
+                bf.CostEstL,
+                bf.CostEstH,
+                bf.ClusterId,
+                bf.CostEstStatusID
+            FROM [dbo].[BodyFindings] bf
+            WHERE bf.BodyFindID = ?
+        """, (numeric_id,))
 
         row = cursor.fetchone()
         
@@ -536,11 +482,12 @@ class SQLServerService:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            # Try to convert item_id to int for BodyFindingID comparison
+            # Try to convert item_id to int for BodyFindID
             try:
                 numeric_id = int(item_id)
             except (ValueError, TypeError):
-                numeric_id = None
+                logging.warning(f"Invalid item_id format: {item_id}")
+                return False
 
             # Convert status string to integer if present
             status_id = None
@@ -556,7 +503,7 @@ class SQLServerService:
                 params.append(updates["message"])
             
             if "zipcode" in updates:
-                update_fields.append("ZipCode = ?")
+                update_fields.append("Zipcode = ?")
                 params.append(updates["zipcode"])
             
             if "min_estimate" in updates:
@@ -575,22 +522,13 @@ class SQLServerService:
                 update_fields.append("CostEstStatusID = ?")
                 params.append(status_id)
 
-            # Always update LastUpdated
-            update_fields.append("LastUpdated = SYSDATETIME()")
-
             if not update_fields:
                 logging.warning("No fields to update")
                 return True  # Nothing to update is not an error
 
             # Build and execute UPDATE query
-            update_sql = f"UPDATE [dbo].[PlsBodyBodyData_BodyFindings] SET {', '.join(update_fields)}"
-            
-            if numeric_id:
-                update_sql += " WHERE (ThreadID = ? OR BodyFindingID = ?) AND IsDeleted = 0"
-                params.extend([item_id, numeric_id])
-            else:
-                update_sql += " WHERE ThreadID = ? AND IsDeleted = 0"
-                params.append(item_id)
+            update_sql = f"UPDATE [dbo].[BodyFindings] SET {', '.join(update_fields)} WHERE BodyFindID = ?"
+            params.append(numeric_id)
 
             logging.info(f"Executing update for item {item_id}: {len(update_fields)} fields")
             cursor.execute(update_sql, params)

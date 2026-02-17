@@ -71,6 +71,7 @@ class SaveCostEstimatesRequest(BaseModel):
 class SaveCostEstimatesResponse(BaseModel):
     status: str
     saved_count: int
+    failed_count: int = 0
 
 class UpdateCostEstimateItem(BaseModel):
     id: Optional[str] = None

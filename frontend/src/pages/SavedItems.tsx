@@ -165,22 +165,6 @@ const SavedItems: React.FC = () => {
   };
 
 
-  const formatLocalDateTime = (dateString?: string) => {
-    if (!dateString) return '—';
-
-    const date = new Date(dateString);
-
-    return new Intl.DateTimeFormat(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    }).format(date);
-  };
-
-
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
@@ -344,11 +328,6 @@ const SavedItems: React.FC = () => {
 
                 <Divider sx={{ my: 2 }} />
                 <Stack direction="row" spacing={1} flexWrap="wrap">
-                  <Chip
-                    label={`Date: ${formatLocalDateTime(group.dateOfCreation)}`}
-                    variant="outlined"
-                    size="small"
-                  />
                   <Chip
                     label={`Cluster: ${group.cluster_name}`}
                     variant="outlined"

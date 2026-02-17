@@ -877,7 +877,8 @@ def save_flat_items(req: func.HttpRequest) -> func.HttpResponse:
 
         response = SaveCostEstimatesResponse(
             status="success" if result["failed_count"] == 0 else "partial_success",
-            saved_count=result["saved_count"]
+            saved_count=result["saved_count"],
+            failed_count=result["failed_count"]
         )
         return func.HttpResponse(
             response.json(),

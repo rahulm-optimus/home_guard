@@ -172,9 +172,10 @@ def test_save_items() -> Optional[Dict]:
     result = make_request("POST", "/v1/save-items", "Save 2 test items", body=body)
     
     if result:
+        print_info(f"Status: {result.get('status', 'unknown')}")
         print_info(f"Saved: {result.get('saved_count', 0)} items")
         if result.get('failed_count', 0) > 0:
-            print_warning(f"Failed: {result['failed_count']} items")
+            print_warning(f"Failed: {result.get('failed_count', 0)} items")
     
     return result
 

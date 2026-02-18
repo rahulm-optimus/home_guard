@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # Azure AI Foundry Agent Configuration
     AZURE_TENANT_ID: Optional[str] = None
     AZURE_AI_PROJECT_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT")
-    AZURE_AGENT_ID: str = os.getenv("AZURE_AGENT_ID")
+    AZURE_AGENT_ID: Optional[str] = os.getenv("AZURE_AGENT_ID")
     AZURE_AI_MODEL_DEPLOYMENT_NAME: str = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4o")
 
     # Server Configuration

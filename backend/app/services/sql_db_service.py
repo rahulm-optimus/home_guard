@@ -105,17 +105,18 @@ class SQLServerService:
             "min_estimate": db_row.get("CostEstL", 0.0),
             "max_estimate": db_row.get("CostEstH", 0.0),
             "zipcode": str(db_row.get("Zipcode", "")).zfill(5) if db_row.get("Zipcode") else "",
-            "clusterId": str(db_row.get("ClusterId")) if db_row.get("ClusterId") else None,
             "estimate_scope": "full",  # Default value
         }
 
-    async def save_flat_items(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Save flat items to SQL Server"""
+    async def save_flat_items(self, items: List[Dict[str, Any]], cosmos_service=None) -> Dict[str, Any]:
+        """Save flat items to SQL Server and optionally to Cosmos DB"""
         if not self.connection_string:
             return self._mock_save_items(items)
 
         saved_count = 0
         failed_count = 0
+        saved_items_for_cosmos = []  # Track items for Cosmos sync
+        sql_body_find_ids = []  # Track IDs for potential rollback
 
         try:
             conn = self._get_connection()
@@ -128,15 +129,14 @@ class SQLServerService:
                     
                     # Convert status string to integer
                     status_id = CostEstStatus.from_string(item.get("status", "need_estimate"))
-                    
-                    # Get ClusterId from item
-                    cluster_id = item.get("clusterId")
 
                     # Try to convert to numeric ID for BodyFindID lookup
                     try:
                         numeric_id = int(item_id) if item_id else None
                     except (ValueError, TypeError):
                         numeric_id = None
+
+                    actual_body_find_id = None
 
                     # Check if record exists with this BodyFindID
                     if numeric_id:
@@ -155,7 +155,6 @@ class SQLServerService:
                                     Zipcode = ?,
                                     CostEstL = ?,
                                     CostEstH = ?,
-                                    ClusterId = ?,
                                     CostEstStatusID = ?
                                 WHERE BodyFindID = ?
                             """, (
@@ -163,10 +162,10 @@ class SQLServerService:
                                 item.get("zipcode", ""),
                                 item.get("min_estimate", 0.0),
                                 item.get("max_estimate", 0.0),
-                                cluster_id,
                                 status_id,
                                 numeric_id
                             ))
+                            actual_body_find_id = numeric_id
                         else:
                             # Insert new record - get next available BodyFindID
                             logger.info(f"Inserting new item")
@@ -175,17 +174,17 @@ class SQLServerService:
                             
                             cursor.execute("""
                                 INSERT INTO [dbo].[BodyFindings] 
-                                (BodyFindID, FindingText, Zipcode, CostEstL, CostEstH, ClusterId, CostEstStatusID, NeedtoEdit)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                                (BodyFindID, FindingText, Zipcode, CostEstL, CostEstH, CostEstStatusID, NeedtoEdit)
+                                VALUES (?, ?, ?, ?, ?, ?, 0)
                             """, (
                                 new_body_find_id,
                                 item.get("message", ""),
                                 item.get("zipcode", ""),
                                 item.get("min_estimate", 0.0),
                                 item.get("max_estimate", 0.0),
-                                cluster_id,
                                 status_id
                             ))
+                            actual_body_find_id = new_body_find_id
                     else:
                         # Insert new record without ID - get next available BodyFindID
                         logger.info(f"Inserting new item")
@@ -194,29 +193,131 @@ class SQLServerService:
                         
                         cursor.execute("""
                             INSERT INTO [dbo].[BodyFindings] 
-                            (BodyFindID, FindingText, Zipcode, CostEstL, CostEstH, ClusterId, CostEstStatusID, NeedtoEdit)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                            (BodyFindID, FindingText, Zipcode, CostEstL, CostEstH, CostEstStatusID, NeedtoEdit)
+                            VALUES (?, ?, ?, ?, ?, ?, 0)
                         """, (
                             new_body_find_id,
                             item.get("message", ""),
                             item.get("zipcode", ""),
                             item.get("min_estimate", 0.0),
                             item.get("max_estimate", 0.0),
-                            cluster_id,
                             status_id
                         ))
+                        actual_body_find_id = new_body_find_id
+                    
+                    # Track for Cosmos sync
+                    if actual_body_find_id:
+                        sql_body_find_ids.append(actual_body_find_id)
+                        saved_items_for_cosmos.append({
+                            "id": str(actual_body_find_id),
+                            "message": item.get("message", ""),
+                            "zipcode": item.get("zipcode", ""),
+                            "min_estimate": item.get("min_estimate", 0.0),
+                            "max_estimate": item.get("max_estimate", 0.0),
+                            "status": status_id,
+                            "thread_id": item.get("thread_id", ""),
+                            "dateOfCreation": item.get("dateOfCreation", ""),
+                            "type": item.get("type", "home_repair"),
+                            "currency": item.get("currency", "USD"),
+                        })
                     
                     saved_count += 1
                 except Exception as e:
                     logger.error(f"Failed to save item {item.get('id', 'unknown')}: {e}")
                     failed_count += 1
 
+            # Commit SQL transaction first
             conn.commit()
+            logger.info(f"SQL Server save committed: {saved_count} items")
+            
+            # Sync to Cosmos DB if service provided
+            if cosmos_service and saved_items_for_cosmos:
+                try:
+                    logger.info(f"Syncing {len(saved_items_for_cosmos)} items to Cosmos DB")
+                    
+                    # Convert items to Cosmos format with cluster_name resolution
+                    cosmos_items = []
+                    for sql_item in saved_items_for_cosmos:
+                        cluster_name = ""
+                        zipcode = sql_item.get("zipcode")
+                        if zipcode:
+                            try:
+                                cluster = self._find_cluster_id_by_zipcode(cursor, zipcode)
+                                if cluster:
+                                    cluster_info = self.get_cluster(str(cluster))
+                                    if cluster_info:
+                                        cluster_name = cluster_info.get("name", "")
+                            except Exception as cluster_err:
+                                logger.warning(f"Failed to get cluster name for zipcode {zipcode}: {cluster_err}")
+                        
+                        cosmos_item = cosmos_service._convert_to_cosmos_format(sql_item, cluster_name)
+                        cosmos_items.append(cosmos_item)
+                    
+                    # Save to Cosmos DB
+                    cosmos_result = await cosmos_service.save_flat_items(cosmos_items)
+                    
+                    if cosmos_result.get("failed_count", 0) > 0:
+                        # Cosmos save failed for some items - rollback SQL
+                        logger.error(f"Cosmos DB save failed for {cosmos_result['failed_count']} items. Rolling back SQL.")
+                        
+                        # Rollback: delete the items we just saved
+                        rollback_cursor = conn.cursor()
+                        for body_find_id in sql_body_find_ids:
+                            try:
+                                rollback_cursor.execute("""
+                                    DELETE FROM [dbo].[BodyFindings]
+                                    WHERE BodyFindID = ?
+                                """, (body_find_id,))
+                            except Exception as rb_err:
+                                logger.error(f"Rollback failed for BodyFindID {body_find_id}: {rb_err}")
+                        
+                        conn.commit()
+                        rollback_cursor.close()
+                        conn.close()
+                        
+                        raise APIError(
+                            status_code=500,
+                            error_code=ErrorCodes.DATABASE_ERROR,
+                            message="Failed to sync items to Cosmos DB. SQL changes rolled back.",
+                            details=str(cosmos_result.get("failed_items"))
+                        )
+                    
+                    logger.info(f"Successfully synced {cosmos_result['saved_count']} items to Cosmos DB")
+                    
+                except Exception as cosmos_err:
+                    # Cosmos sync failed completely - rollback SQL
+                    logger.error(f"Cosmos DB sync failed: {cosmos_err}. Rolling back SQL.")
+                    
+                    # Rollback: delete the items we just saved
+                    rollback_cursor = conn.cursor()
+                    for body_find_id in sql_body_find_ids:
+                        try:
+                            rollback_cursor.execute("""
+                                DELETE FROM [dbo].[BodyFindings]
+                                WHERE BodyFindID = ?
+                            """, (body_find_id,))
+                        except Exception as rb_err:
+                            logger.error(f"Rollback failed for BodyFindID {body_find_id}: {rb_err}")
+                    
+                    conn.commit()
+                    rollback_cursor.close()
+                    conn.close()
+                    
+                    raise APIError(
+                        status_code=500,
+                        error_code=ErrorCodes.DATABASE_ERROR,
+                        message="Failed to sync items to Cosmos DB. SQL changes rolled back.",
+                        details=str(cosmos_err)
+                    )
+            
             cursor.close()
             conn.close()
 
             return {"saved_count": saved_count, "failed_count": failed_count}
 
+        except APIError:
+            # Re-raise API errors (including Cosmos sync failures)
+            raise
         except Exception as e:
             logger.error(f"Database operation failed: {e}")
             raise APIError(
@@ -266,7 +367,6 @@ class SQLServerService:
                     bf.Zipcode,
                     bf.CostEstL,
                     bf.CostEstH,
-                    bf.ClusterId,
                     bf.CostEstStatusID
                 FROM [dbo].[BodyFindings] bf
                 WHERE bf.CostEstStatusID = 20 OR bf.CostEstStatusID = 40
@@ -327,7 +427,6 @@ class SQLServerService:
                     bf.Zipcode,
                     bf.CostEstL,
                     bf.CostEstH,
-                    bf.ClusterId,
                     bf.CostEstStatusID
                 FROM [dbo].[BodyFindings] bf
                 WHERE bf.FindingText LIKE ? AND (bf.CostEstStatusID = 20 OR bf.CostEstStatusID = 40)
@@ -385,7 +484,6 @@ class SQLServerService:
                     bf.Zipcode,
                     bf.CostEstL,
                     bf.CostEstH,
-                    bf.ClusterId,
                     bf.CostEstStatusID
                 FROM [dbo].[BodyFindings] bf
                 WHERE bf.BodyFindID = ?
@@ -414,8 +512,15 @@ class SQLServerService:
                 details=str(e)
             )
 
-    async def update_item(self, item_id: str, updates: Dict[str, Any]) -> bool:
-        """Update an existing item in SQL Server"""
+    async def update_item(self, item_id: str, updates: Dict[str, Any], cosmos_service=None) -> bool:
+        """
+        Update an existing item in SQL Server and optionally in Cosmos DB.
+        
+        SQL Server updates: Only cost estimates (min_estimate, max_estimate), message, and status
+        Cosmos DB updates: All fields including zipcode, cluster_name, thread_id, etc.
+        
+        Note: zipcode and clusterId are NOT updated in SQL Server but ARE updated in Cosmos DB
+        """
         if not self.connection_string:
             return False
 
@@ -430,15 +535,38 @@ class SQLServerService:
                 logger.warning(f"Invalid item_id format: {item_id}")
                 return False
 
+            # Get the current item state for potential rollback
+            cursor.execute("""
+                SELECT FindingText, CostEstL, CostEstH, CostEstStatusID, Zipcode
+                FROM [dbo].[BodyFindings]
+                WHERE BodyFindID = ?
+            """, (numeric_id,))
+            old_row = cursor.fetchone()
+            
+            if not old_row:
+                logger.warning(f"Item {item_id} not found for update")
+                cursor.close()
+                conn.close()
+                return False
+            
+            # Store old values for rollback (only fields we're updating in SQL)
+            old_values = {
+                "FindingText": old_row[0],
+                "CostEstL": old_row[1],
+                "CostEstH": old_row[2],
+                "CostEstStatusID": old_row[3]
+            }
+            # Store current zipcode for Cosmos sync
+            current_zipcode = str(old_row[4]) if old_row[4] else ""
+
             # Convert status string to integer if present
             status_id = None
             if "status" in updates:
                 status_id = CostEstStatus.from_string(updates.get("status", "need_estimate"))
 
-            # Get ClusterId from updates
-            cluster_id = updates.get("clusterId")
-
             # Build UPDATE query dynamically based on provided fields
+            # NOTE: For now, only update cost estimates in SQL Server
+            # zipcode will NOT be updated in SQL Server
             update_fields = []
             params = []
 
@@ -446,9 +574,10 @@ class SQLServerService:
                 update_fields.append("FindingText = ?")
                 params.append(updates["message"])
             
-            if "zipcode" in updates:
-                update_fields.append("Zipcode = ?")
-                params.append(updates["zipcode"])
+            # NOTE: zipcode update commented out - not updating in SQL Server
+            # if "zipcode" in updates:
+            #     update_fields.append("Zipcode = ?")
+            #     params.append(updates["zipcode"])
             
             if "min_estimate" in updates:
                 update_fields.append("CostEstL = ?")
@@ -458,16 +587,14 @@ class SQLServerService:
                 update_fields.append("CostEstH = ?")
                 params.append(updates["max_estimate"])
             
-            if cluster_id is not None:
-                update_fields.append("ClusterId = ?")
-                params.append(cluster_id)
-            
             if status_id is not None:
                 update_fields.append("CostEstStatusID = ?")
                 params.append(status_id)
 
             if not update_fields:
                 logger.warning("No fields to update")
+                cursor.close()
+                conn.close()
                 return True  # Nothing to update is not an error
 
             # Build and execute UPDATE query
@@ -478,17 +605,149 @@ class SQLServerService:
             cursor.execute(update_sql, params)
             
             rows_affected = cursor.rowcount
-            conn.commit()
-            cursor.close()
-            conn.close()
 
             if rows_affected == 0:
                 logger.warning(f"No rows updated for item {item_id}")
+                cursor.close()
+                conn.close()
                 return False
 
-            logger.info(f"Successfully updated item {item_id}, {rows_affected} row(s) affected")
+            # Commit SQL transaction
+            conn.commit()
+            logger.info(f"SQL Server update committed for item {item_id}")
+
+            # Sync to Cosmos DB if service provided
+            if cosmos_service:
+                try:
+                    # Read back the updated item from SQL Server
+                    cursor.execute("""
+                        SELECT 
+                            bf.BodyFindID,
+                            bf.FindingText,
+                            bf.Zipcode,
+                            bf.CostEstL,
+                            bf.CostEstH,
+                            bf.CostEstStatusID
+                        FROM [dbo].[BodyFindings] bf
+                        WHERE bf.BodyFindID = ?
+                    """, (numeric_id,))
+                    
+                    updated_row = cursor.fetchone()
+                    updated_dict = self._row_to_dict(cursor, updated_row)
+                    updated_item = self._map_db_to_api(updated_dict)
+                    
+                    # If zipcode was in the update request, apply it to Cosmos
+                    # (it's not updated in SQL Server, but should be in Cosmos)
+                    if "zipcode" in updates:
+                        updated_item["zipcode"] = updates["zipcode"]
+                        logger.info(f"Applying zipcode from updates to Cosmos: {updates['zipcode']}")
+                    
+                    # Resolve cluster name using zipcode
+                    cluster_name = ""
+                    zipcode_to_use = updated_item.get("zipcode")
+                    
+                    if zipcode_to_use:
+                        try:
+                            logger.info(f"Resolving cluster for zipcode: {zipcode_to_use}")
+                            cluster_id = self._find_cluster_id_by_zipcode(cursor, zipcode_to_use)
+                            if cluster_id:
+                                cluster = self.get_cluster(str(cluster_id))
+                                if cluster:
+                                    cluster_name = cluster.get("name", "")
+                                    logger.info(f"Resolved cluster name: '{cluster_name}' for zipcode {zipcode_to_use}")
+                                else:
+                                    logger.warning(f"No cluster found for cluster_id {cluster_id}")
+                            else:
+                                logger.warning(f"No cluster_id found for zipcode {zipcode_to_use}")
+                        except Exception as cluster_err:
+                            logger.warning(f"Failed to get cluster for zipcode {zipcode_to_use}: {cluster_err}")
+                    else:
+                        logger.info(f"No zipcode found for item {item_id}")
+                    
+                    # Convert to Cosmos format
+                    cosmos_item = cosmos_service._convert_to_cosmos_format(updated_item, cluster_name)
+                    
+                    # Merge any additional fields from the original updates that should go to Cosmos
+                    # (but not SQL Server) such as thread_id, type, dateOfCreation, etc.
+                    cosmos_only_fields = ["thread_id", "type", "dateOfCreation", "currency"]
+                    for field in cosmos_only_fields:
+                        if field in updates:
+                            cosmos_item[field] = updates[field]
+                            logger.info(f"Applying {field} from updates to Cosmos: {updates[field]}")
+                    
+                    logger.info(f"Cosmos item format: id='{cosmos_item.get('id')}', cluster_name='{cosmos_item.get('cluster_name')}', zipcode='{cosmos_item.get('zipcode')}'")
+                    
+                    # Update in Cosmos DB using cluster_name as partition key
+                    cosmos_success = await cosmos_service.update_item(
+                        item_id=str(numeric_id),
+                        cluster_name=cluster_name,
+                        updates=cosmos_item
+                    )
+                    
+                    if not cosmos_success:
+                        # Cosmos update failed - rollback SQL (only fields we updated)
+                        logger.error("Cosmos DB update failed. Rolling back SQL.")
+                        
+                        rollback_cursor = conn.cursor()
+                        rollback_cursor.execute("""
+                            UPDATE [dbo].[BodyFindings]
+                            SET FindingText = ?, CostEstL = ?, CostEstH = ?, CostEstStatusID = ?
+                            WHERE BodyFindID = ?
+                        """, (
+                            old_values["FindingText"],
+                            old_values["CostEstL"],
+                            old_values["CostEstH"],
+                            old_values["CostEstStatusID"],
+                            numeric_id
+                        ))
+                        conn.commit()
+                        rollback_cursor.close()
+                        conn.close()
+                        
+                        raise APIError(
+                            status_code=500,
+                            error_code=ErrorCodes.DATABASE_ERROR,
+                            message="Failed to sync update to Cosmos DB. SQL changes rolled back."
+                        )
+                    
+                    logger.info(f"Successfully synced update for item {item_id} to Cosmos DB")
+                    
+                except Exception as cosmos_err:
+                    # Cosmos sync failed - rollback SQL (only fields we updated)
+                    logger.error(f"Cosmos DB sync failed: {cosmos_err}. Rolling back SQL.")
+                    
+                    rollback_cursor = conn.cursor()
+                    rollback_cursor.execute("""
+                        UPDATE [dbo].[BodyFindings]
+                        SET FindingText = ?, CostEstL = ?, CostEstH = ?, CostEstStatusID = ?
+                        WHERE BodyFindID = ?
+                    """, (
+                        old_values["FindingText"],
+                        old_values["CostEstL"],
+                        old_values["CostEstH"],
+                        old_values["CostEstStatusID"],
+                        numeric_id
+                    ))
+                    conn.commit()
+                    rollback_cursor.close()
+                    conn.close()
+                    
+                    raise APIError(
+                        status_code=500,
+                        error_code=ErrorCodes.DATABASE_ERROR,
+                        message="Failed to sync update to Cosmos DB. SQL changes rolled back.",
+                        details=str(cosmos_err)
+                    )
+            
+            cursor.close()
+            conn.close()
+
+            logger.info(f"Successfully updated item {item_id}")
             return True
 
+        except APIError:
+            # Re-raise API errors (including Cosmos sync failures)
+            raise
         except Exception as e:
             logger.error(f"Failed to update item {item_id}: {e}")
             raise APIError(

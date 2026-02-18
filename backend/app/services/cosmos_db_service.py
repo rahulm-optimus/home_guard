@@ -7,10 +7,11 @@
 # from azure.cosmos import CosmosClient, PartitionKey, exceptions
 # from app.core.config import settings
 # from app.core.exceptions import APIError, ErrorCodes
-# from app.schemas.requests import SaveItemInput
+# from app.schemas.requests import SaveItemInput, CostEstStatus
 # import logging
 # import threading
 # import uuid
+# from datetime import datetime
 
 # logger = logging.getLogger(__name__)
 
@@ -76,6 +77,44 @@
 #         """Remove Cosmos DB system fields from a document"""
 #         system_fields = ['_rid', '_self', '_etag', '_attachments', '_ts']
 #         return {k: v for k, v in item.items() if k not in system_fields}
+
+#     def _convert_status_to_string(self, status_id: int) -> str:
+#         """Convert SQL Server status integer to Cosmos DB status string"""
+#         return CostEstStatus.to_string(status_id)
+    
+#     def _convert_to_cosmos_format(self, item: Dict[str, Any], cluster_name: str = "") -> Dict[str, Any]:
+#         """
+#         Convert SQL Server item format to Cosmos DB format.
+        
+#         Maps SQL fields to Cosmos DB schema:
+#         - status: integer -> string
+#         - id: ensure string format
+#         - cluster_name: add from resolution
+#         - dateOfCreation: add if missing
+#         - currency: add if missing
+#         - type: add if missing
+#         """
+#         cosmos_item = {
+#             "id": str(item.get("id", "")),
+#             "status": item.get("status", "need_estimate") if isinstance(item.get("status"), str) else self._convert_status_to_string(item.get("status", 10)),
+#             "dateOfCreation": item.get("dateOfCreation", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")),
+#             "message": item.get("message", ""),
+#             "currency": item.get("currency", "USD"),
+#             "min_estimate": float(item.get("min_estimate", 0.0)),
+#             "max_estimate": float(item.get("max_estimate", 0.0)),
+#             "cluster_name": cluster_name or item.get("cluster_name", ""),
+#             "zipcode": str(item.get("zipcode", "")),
+#         }
+        
+#         # Add optional fields if present
+#         if "thread_id" in item:
+#             cosmos_item["thread_id"] = item["thread_id"]
+#         if "type" in item:
+#             cosmos_item["type"] = item["type"]
+#         else:
+#             cosmos_item["type"] = "home_repair"
+            
+#         return cosmos_item
 
 #     # ------------------------------------------------------------------
 #     # CRUD OPERATIONS
@@ -422,6 +461,63 @@
 #             "saved_items": saved_items,
 #             "failed_items": failed_items or None
 #         }
+
+#     async def update_item(self, item_id: str, cluster_name: str, updates: Dict[str, Any]) -> bool:
+#         """
+#         Update an existing item in Cosmos DB.
+        
+#         Args:
+#             item_id: The item ID (BodyFindID as string)
+#             cluster_name: Partition key for the item (cluster_name)
+#             updates: Dictionary with updated fields (already in Cosmos format)
+            
+#         Returns:
+#             True if update successful, False otherwise
+            
+#         Raises:
+#             APIError: If update fails
+#         """
+#         if not self.container:
+#             logger.warning("Cosmos DB not configured. Cannot update item.")
+#             return False
+
+#         try:
+#             logger.info(f"[COSMOS] Attempting to read item {item_id} with partition key cluster_name='{cluster_name}'")
+#             # Read existing item first
+#             try:
+#                 existing_item = self.container.read_item(
+#                     item=str(item_id),
+#                     partition_key=str(cluster_name)
+#                 )
+#                 logger.info(f"[COSMOS] Found existing item {item_id} in Cosmos DB")
+#             except exceptions.CosmosResourceNotFoundError:
+#                 logger.warning(f"[COSMOS] Item {item_id} not found in Cosmos DB with cluster_name='{cluster_name}' - will upsert")
+#                 # Item doesn't exist, so upsert the complete item
+#                 if "id" not in updates:
+#                     updates["id"] = str(item_id)
+#                 if "cluster_name" not in updates:
+#                     updates["cluster_name"] = str(cluster_name)
+                
+#                 result = self.container.upsert_item(body=updates)
+#                 logger.info(f"Upserted item {item_id} to Cosmos DB")
+#                 return True
+            
+#             # Merge updates into existing item
+#             for key, value in updates.items():
+#                 existing_item[key] = value
+            
+#             # Upsert the merged item
+#             result = self.container.upsert_item(body=existing_item)
+#             logger.info(f"Updated item {item_id} in Cosmos DB")
+#             return True
+
+#         except Exception as e:
+#             logger.error(f"Failed to update item {item_id} in Cosmos DB: {str(e)}")
+#             raise APIError(
+#                 message=f"Failed to update item in Cosmos DB: {str(e)}",
+#                 status_code=500,
+#                 error_code=ErrorCodes.COSMOS_DB_ERROR
+#             )
 
 #     # ------------------------------------------------------------------
 #     # QUERY OPERATIONS

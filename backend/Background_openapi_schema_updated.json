@@ -1,0 +1,116 @@
+{
+  "openapi": "3.0.2",
+  "info": {
+    "title": "Background Agent - Cluster API",
+    "description": "API schema for Background Cost Estimation Agent to call getClusterByZipcode endpoint",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://9l9k8fvx-7071.inc1.devtunnels.ms/",
+      "description": "Cluster API Server"
+    }
+  ],
+  "paths": {
+    "/api/v1/cluster-by-zipcode": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "summary": "Find cluster by zipcode",
+        "description": "Determines which cluster a specific zipcode belongs to. This is used before querying historical data to identify the cluster context.",
+        "operationId": "getClusterByZipcode",
+        "parameters": [
+          {
+            "name": "zipcode",
+            "in": "query",
+            "required": true,
+            "description": "5-digit US zipcode",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{5}$",
+              "example": "94551"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cluster lookup result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterByZipcodeResponse"
+                },
+                "examples": {
+                  "found": {
+                    "summary": "Zipcode belongs to a cluster",
+                    "value": {
+                      "found": true,
+                      "cluster_id": "cluster-uuid-123",
+                      "cluster_name": "Bay Area East"
+                    }
+                  },
+                  "not_found": {
+                    "summary": "Zipcode does not belong to any cluster",
+                    "value": {
+                      "found": false,
+                      "cluster_id": null,
+                      "cluster_name": ""
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid zipcode format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ClusterByZipcodeResponse": {
+        "type": "object",
+        "required": [
+          "found",
+          "cluster_name"
+        ],
+        "properties": {
+          "found": {
+            "type": "boolean",
+            "description": "Whether the zipcode belongs to a cluster"
+          },
+          "cluster_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Cluster UUID (null if not found)"
+          },
+          "cluster_name": {
+            "type": "string",
+            "description": "Cluster name (empty string if not found)"
+          }
+        }
+      },
+      "HTTPError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -835,11 +835,13 @@ from schemas.requests import (
     UpdateCostEstimateResponse
 )
 from services.sql_db_service import SQLServerService
+from services.cosmos_db_service_temp import CosmosDBService
 
 @app.route(route="v1/save-items", methods=["POST"])
 def save_flat_items(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Save cost estimate items. 
+    Save cost estimate items to SQL Server and Cosmos DB.
+    Both databases must succeed or both will be rolled back.
     Now stores ONE record per estimate indexed by cluster_name (no zipcode expansion).
     """
     try:
@@ -862,6 +864,7 @@ def save_flat_items(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         sql_service = SQLServerService()
+        cosmos_service = CosmosDBService()
         
         # Convert items to dict format for saving
         items_to_save = []
@@ -873,7 +876,7 @@ def save_flat_items(req: func.HttpRequest) -> func.HttpResponse:
                 item_dict['id'] = str(uuid.uuid4())
             items_to_save.append(item_dict)
         
-        result = sql_service.save_flat_items(items_to_save)
+        result = sql_service.save_flat_items(items_to_save, cosmos_service=cosmos_service)
 
         response = SaveCostEstimatesResponse(
             status="success" if result["failed_count"] == 0 else "partial_success",
@@ -1053,61 +1056,87 @@ def search_items(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="v1/update-item/{item_id}", methods=["PUT"])
 def update_item(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Update an existing cost estimate item.
+    Update an existing cost estimate item in SQL Server and Cosmos DB.
+    Both databases must succeed or both will be rolled back.
     Uses SQL Server with item_id lookup.
     """
     try:
         item_id = req.route_params.get("item_id")
+        logging.info(f"[UPDATE] Received update request for item_id: {item_id}")
         
         if not item_id:
+            error_response = {"error": "Missing item_id parameter"}
+            logging.error(f"[UPDATE] {error_response}")
             return func.HttpResponse(
-                json.dumps({"error": "Missing item_id parameter"}),
+                json.dumps(error_response),
                 status_code=400,
                 mimetype="application/json"
             )
         
         try:
             req_body = req.get_json()
+            logging.info(f"[UPDATE] Request body for item {item_id}: {json.dumps(req_body)}")
         except ValueError:
+            error_response = {"error": "Invalid JSON in request body"}
+            logging.error(f"[UPDATE] {error_response}")
             return func.HttpResponse(
-                json.dumps({"error": "Invalid JSON in request body"}),
+                json.dumps(error_response),
                 status_code=400,
                 mimetype="application/json"
             )
         
+        # Extract item from request body if wrapped
+        if "item" in req_body and isinstance(req_body["item"], dict):
+            item_data = req_body["item"]
+            logging.info(f"[UPDATE] Extracted item data from 'item' wrapper: {json.dumps(item_data)}")
+        else:
+            item_data = req_body
+        
         sql_service = SQLServerService()
+        cosmos_service = CosmosDBService()
+        logging.info(f"[UPDATE] Initialized SQL and Cosmos services for item {item_id}")
         
         # Get existing item by ID (no partition key needed for SQL Server)
         existing_item = sql_service.get_item(item_id)
         
         if existing_item is None:
+            error_response = {"error": f"Item with id '{item_id}' not found"}
+            logging.error(f"[UPDATE] {error_response}")
             return func.HttpResponse(
-                json.dumps({"error": f"Item with id '{item_id}' not found"}),
+                json.dumps(error_response),
                 status_code=404,
                 mimetype="application/json"
             )
+        
+        logging.info(f"[UPDATE] Found existing item {item_id}: {json.dumps(existing_item)}")
         
         # Update fields from request body
         update_fields = {}
         allowed_fields = ['message', 'zipcode', 'min_estimate', 'max_estimate', 'cluster_id', 'status']
         
         for field in allowed_fields:
-            if field in req_body:
-                update_fields[field] = req_body[field]
+            if field in item_data:
+                update_fields[field] = item_data[field]
         
         if not update_fields:
+            error_response = {"error": "No valid fields to update"}
+            logging.error(f"[UPDATE] {error_response}")
             return func.HttpResponse(
-                json.dumps({"error": "No valid fields to update"}),
+                json.dumps(error_response),
                 status_code=400,
                 mimetype="application/json"
             )
         
-        # Use the update_item method
-        success = sql_service.update_item(item_id, update_fields)
+        logging.info(f"[UPDATE] Update fields for item {item_id}: {json.dumps(update_fields)}")
+        
+        # Use the update_item method with Cosmos sync
+        success = sql_service.update_item(item_id, update_fields, cosmos_service=cosmos_service)
         
         if not success:
+            error_response = {"error": "Failed to update item"}
+            logging.error(f"[UPDATE] {error_response}")
             return func.HttpResponse(
-                json.dumps({"error": "Failed to update item"}),
+                json.dumps(error_response),
                 status_code=500,
                 mimetype="application/json"
             )
@@ -1117,14 +1146,18 @@ def update_item(req: func.HttpRequest) -> func.HttpResponse:
             message="Item updated successfully",
             item_id=item_id
         )
+        response_json = response.json()
+        logging.info(f"[UPDATE] Success! Response for item {item_id}: {response_json}")
         return func.HttpResponse(
-            response.json(),
+            response_json,
             status_code=200,
             mimetype="application/json"
         )
     except Exception as e:
+        error_response = {"error": "Internal server error", "message": str(e)}
+        logging.error(f"[UPDATE] Exception for item {item_id if 'item_id' in locals() else 'unknown'}: {error_response}")
         return func.HttpResponse(
-            json.dumps({"error": "Internal server error", "message": str(e)}),
+            json.dumps(error_response),
             status_code=500,
             mimetype="application/json"
         )

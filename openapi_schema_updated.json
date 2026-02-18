@@ -2,23 +2,23 @@
   "openapi": "3.0.2",
   "info": {
     "title": "Cost Estimate Persistence API",
-    "description": "API for saving and updating cost estimate results into Azure Cosmos DB, and managing zipcode clusters. Items are indexed by message (description) and cluster_name.",
-    "version": "2.0.0"
+    "description": "API for saving and updating cost estimate results into SQL Server, and managing zipcode clusters. Items are indexed by message (description) and cluster_id.",
+    "version": "2.1.0"
   },
   "servers": [
     {
       "url": "https://9l9k8fvx-7071.inc1.devtunnels.ms/",
-      "description": "Cosmos DB Save API"
+      "description": "SQL Server Save API"
     }
   ],
   "paths": {
     "/api/v1/save-items": {
       "post": {
         "tags": [
-          "CosmosDB"
+          "Items"
         ],
         "summary": "Save cost estimate items",
-        "description": "Persists one or more cost estimate records into Cosmos DB. Items are indexed by message (description) and cluster_name.",
+        "description": "Persists one or more cost estimate records into SQL Server. Items are indexed by message (description) and cluster_id.",
         "operationId": "saveCostEstimates",
         "requestBody": {
           "required": true,
@@ -30,7 +30,7 @@
               "example": {
                 "items": [
                   {
-                    "status": "approved",
+                    "status": "need_estimate",
                     "thread_id": "thread_abc123",
                     "dateOfCreation": "2026-01-27T10:30:00Z",
                     "type": "home_repair",
@@ -38,7 +38,8 @@
                     "currency": "USD",
                     "min_estimate": 350,
                     "max_estimate": 550,
-                    "cluster_name": "Bay Area East"
+                    "zipcode": "94551",
+                    "cluster_id": "cluster-uuid-123"
                   }
                 ]
               }
@@ -72,30 +73,20 @@
     "/api/v1/update-item/{item_id}": {
       "put": {
         "tags": [
-          "CosmosDB"
+          "Items"
         ],
         "summary": "Update an existing cost estimate item",
-        "description": "Updates specified fields of an existing cost estimate item in Cosmos DB.",
+        "description": "Updates specified fields of an existing cost estimate item in SQL Server.",
         "operationId": "updateCostEstimate",
         "parameters": [
           {
             "name": "item_id",
             "in": "path",
             "required": true,
-            "description": "Unique identifier of the item to update",
+            "description": "Unique identifier of the item to update (ThreadID or BodyFindingID)",
             "schema": {
               "type": "string",
-              "example": "e6bc31cd-df47-4848-a703-46420a302a70"
-            }
-          },
-          {
-            "name": "cluster_name",
-            "in": "query",
-            "required": true,
-            "description": "Cluster name (partition key) for the item",
-            "schema": {
-              "type": "string",
-              "example": "Bay Area East"
+              "example": "thread_abc123"
             }
           }
         ],
@@ -149,7 +140,7 @@
           "Clusters"
         ],
         "summary": "Get all zipcode clusters with pagination",
-        "description": "Retrieve all zipcode clusters from Cosmos DB.",
+        "description": "Retrieve all zipcode clusters from SQL Server.",
         "operationId": "getClusters",
         "parameters": [
           {
@@ -257,6 +248,112 @@
           }
         }
       }
+    },
+    "/api/v1/items": {
+      "get": {
+        "tags": [
+          "Items"
+        ],
+        "summary": "Get all cost estimate items with pagination",
+        "description": "Retrieve all cost estimate items from SQL Server.",
+        "operationId": "getItems",
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Items retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetItemsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search-items": {
+      "get": {
+        "tags": [
+          "Items"
+        ],
+        "summary": "Search cost estimate items by message",
+        "description": "Search for items matching a query in the message field.",
+        "operationId": "searchItems",
+        "parameters": [
+          {
+            "name": "search_query",
+            "in": "query",
+            "required": true,
+            "description": "Search query to match against message field",
+            "schema": {
+              "type": "string",
+              "example": "tile repair"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results returned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetItemsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing search_query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -280,18 +377,17 @@
         "required": [
           "status",
           "thread_id",
-          "dateOfCreation",
-          "type",
           "message",
-          "currency",
           "min_estimate",
           "max_estimate",
-          "cluster_name"
+          "zipcode",
+          "cluster_id"
         ],
         "properties": {
           "status": {
             "type": "string",
-            "example": "approved"
+            "description": "Status of the estimate (leave_alone, need_estimate, estimate_complete, edit_input, ai_analyzed)",
+            "example": "need_estimate"
           },
           "thread_id": {
             "type": "string",
@@ -300,6 +396,7 @@
           "dateOfCreation": {
             "type": "string",
             "format": "date-time",
+            "description": "Auto-generated if not provided",
             "example": "2026-01-27T10:30:00Z"
           },
           "type": {
@@ -308,15 +405,17 @@
               "home_repair",
               "home_inspection"
             ],
+            "default": "home_repair",
             "example": "home_repair"
           },
           "message": {
             "type": "string",
-            "description": "Description of the estimate (index key with cluster_name)",
+            "description": "Description of the estimate (index key with cluster_id)",
             "example": "Tile repair"
           },
           "currency": {
             "type": "string",
+            "default": "USD",
             "example": "USD"
           },
           "min_estimate": {
@@ -327,10 +426,16 @@
             "type": "number",
             "example": 550
           },
-          "cluster_name": {
+          "zipcode": {
             "type": "string",
-            "description": "Cluster name (partition key). Empty string if no cluster.",
-            "example": "Bay Area East"
+            "pattern": "^[0-9]{5}$",
+            "description": "5-digit US zipcode",
+            "example": "94551"
+          },
+          "cluster_id": {
+            "type": "string",
+            "description": "Cluster UUID or identifier",
+            "example": "cluster-uuid-123"
           }
         }
       },
@@ -458,6 +563,43 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "GetItemsResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "status_code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "total_count": {
+                "type": "integer"
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "returned_count": {
+                "type": "integer"
+              }
+            }
           }
         }
       },

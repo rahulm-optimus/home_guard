@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 """
 Save Endpoints
-API routes for saving items to SQL Server
+API routes for saving items to SQL Server and Cosmos DB
 """
 from fastapi import APIRouter, Depends, Query
 from app.schemas.requests import SaveItemsRequest, SaveItemsResponse, GetItemsResponse, SaveFlatItemInput, SaveCostEstimatesRequest, SaveCostEstimatesResponse, UpdateCostEstimateRequest, UpdateCostEstimateResponse
@@ -10,6 +10,7 @@ from app.schemas.requests import SaveItemsRequest, SaveItemsResponse, GetItemsRe
 from fastapi import Body
 
 from app.services.sql_db_service import get_sql_service, SQLServerService
+from app.services.cosmos_db_service_temp import get_cosmos_service, CosmosDBService
 import logging
 
 
@@ -17,28 +18,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/save-items", summary="Save flat items to SQL Server")
+@router.post("/save-items", summary="Save flat items to SQL Server and Cosmos DB")
 async def save_flat_items(
     request: SaveCostEstimatesRequest = Body(..., description="Cost estimates request with items array"),
-    sql_service: SQLServerService = Depends(get_sql_service)
+    sql_service: SQLServerService = Depends(get_sql_service),
+    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
 ) -> SaveCostEstimatesResponse:
     """
-    Persists one or more cost estimate records into SQL Server.
+    Persists one or more cost estimate records into SQL Server and Cosmos DB.
+    Both databases must succeed or both will be rolled back.
     
     This endpoint accepts a request body with an 'items' array containing cost estimates,
-    saves them to SQL Server, and returns the saved items with operation status.
+    saves them to SQL Server and Cosmos DB, and returns the saved items with operation status.
     
     Args:
         request: SaveCostEstimatesRequest containing list of items to save
         sql_service: Injected SQLServerService instance
+        cosmos_service: Injected CosmosDBService instance
         
     Returns:
         SaveCostEstimatesResponse with status, statusCode, message, and estimatedItems
     """
     items = request.items
-    logger.info(f"Saving {len(items)} cost estimate items to SQL Server")
+    logger.info(f"Saving {len(items)} cost estimate items to SQL Server and Cosmos DB")
     
-    result = await sql_service.save_flat_items([item.dict() for item in items])
+    result = await sql_service.save_flat_items([item.dict() for item in items], cosmos_service=cosmos_service)
     
     return SaveCostEstimatesResponse(
         status="success" if result["failed_count"] == 0 else "partial_success",
@@ -193,10 +197,12 @@ async def update_item(
     cluster_name: str = Query(None, description="Cluster name (primary partition key) for the item"),
     zipcode: str = Query(None, description="Zipcode (fallback partition key) for the item"),
     request: UpdateCostEstimateRequest = Body(..., description="Fields to update"),
-    sql_service: SQLServerService = Depends(get_sql_service)
+    sql_service: SQLServerService = Depends(get_sql_service),
+    cosmos_service: CosmosDBService = Depends(get_cosmos_service)
 ) -> UpdateCostEstimateResponse:
     """
-    Update an existing cost estimate item in SQL Server.
+    Update an existing cost estimate item in SQL Server and Cosmos DB.
+    Both databases must succeed or both will be rolled back.
     
     This endpoint updates specified fields of an existing item while preserving
     immutable fields (id, zipcode, thread_id, type, currency). It guarantees that
@@ -208,6 +214,7 @@ async def update_item(
         zipcode: Zipcode (fallback partition key) for the item
         request: UpdateCostEstimateRequest containing fields to update
         sql_service: Injected SQLServerService instance
+        cosmos_service: Injected CosmosDBService instance
         
     Returns:
         UpdateCostEstimateResponse with status and item_id
@@ -234,17 +241,15 @@ async def update_item(
     if not item_id or item_id == "null" or item_id == "undefined":
         raise HTTPException(status_code=400, detail="Invalid item_id. Item ID is required and cannot be null.")
     
-    # Determine partition key to use
-    if not cluster_name and not zipcode:
-        raise HTTPException(status_code=400, detail="Either cluster_name or zipcode must be provided")
-    
-    partition_key = cluster_name or zipcode
+    # cluster_name and zipcode are optional - SQL Server only needs item_id
+    # We'll get zipcode from the existing item if needed for Cosmos DB
+    partition_key = cluster_name or zipcode or ""
     fallback_key = zipcode if cluster_name else None
     
-    logger.info(f"Updating item {item_id} with partition key: {partition_key}" + (f", fallback: {fallback_key}" if fallback_key else ""))
+    logger.info(f"Updating item {item_id}" + (f" with partition key: {partition_key}" if partition_key else ""))
     
     try:
-        # Fetch existing item to ensure it exists (tries cluster_name first, then zipcode)
+        # Fetch existing item to ensure it exists
         existing_item = sql_service.get_item(item_id, partition_key, fallback_key)
         
         if existing_item is None:
@@ -262,8 +267,8 @@ async def update_item(
         
         logger.info(f"Updating fields: {list(update_data.keys())}")
         
-        # Use the dedicated update method
-        success = await sql_service.update_item(item_id, update_data)
+        # Use the dedicated update method with Cosmos sync
+        success = await sql_service.update_item(item_id, update_data, cosmos_service=cosmos_service)
         
         if not success:
             logger.error(f"Failed to update item {item_id}")

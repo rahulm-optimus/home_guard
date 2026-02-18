@@ -264,37 +264,36 @@ Follow-ups may also include clarifications or new requests, which should be trea
 
 ## COST ESTIMATE PERSISTENCE (MANDATORY ACTION RULE)
 
+
 When the user responds with **"yes"**, **"approved"**, or any explicit approval for saving the estimates:
 
-### STEP 1: RETRIEVE CLUSTER NAME
+### STEP 1: RETRIEVE CLUSTER INFO
 
-Use the `cluster_name` that you obtained earlier from the **getClusterByZipcode** call in the estimate generation workflow.
+Use the `cluster_id`, `cluster_name`, and `zipcode` obtained earlier from the **getClusterByZipcode** call in the estimate generation workflow.
 
 **Important**: You should have already called this API during estimate generation (STEP 2 above). Do NOT call it again.
 
 ### STEP 2: CHECK FOR EXISTING ESTIMATE
 
-You MUST check if an estimate already exists with the same **description (message)** + **cluster_name** combination:
-
-**Check the historicalData agent response from earlier (STEP 3 of estimate generation):**
+Check if an estimate already exists with the same **description (message)** + **cluster_name** combination using the historicalData agent response from earlier (STEP 3 of estimate generation):
 
 1. **If historicalData returned a valid record** (fields are NOT "none"):
-   - Extract the `id` field from the response → this is your `item_id`
-   - This means an estimate EXISTS for this message + cluster_name combination
-   - You MUST update this existing record (do NOT create a duplicate)
+    - Extract the `id` field from the response → this is your `item_id`
+    - This means an estimate EXISTS for this message + cluster_name combination
+    - You MUST update this existing record (do NOT create a duplicate)
 
 2. **If historicalData returned "none" for all fields**:
-   - No existing estimate found
-   - You will create a NEW record
+    - No existing estimate found
+    - You will create a NEW record
 
 **Example of existing record:**
 ```json
 {
-  "message": "Tile repair",
-  "id": "abc-123-def",
-  "cluster_name": "Bay Area East",
-  "last_approved_min": 350,
-  "last_approved_max": 550
+   "message": "Tile repair",
+   "id": "abc-123-def",
+   "cluster_name": "Bay Area East",
+   "last_approved_min": 350,
+   "last_approved_max": 550
 }
 ```
 → **Action: UPDATE** (use item_id="abc-123-def")
@@ -302,9 +301,9 @@ You MUST check if an estimate already exists with the same **description (messag
 **Example of no record:**
 ```json
 {
-  "message": "none",
-  "id": "none",
-  "cluster_name": "none"
+   "message": "none",
+   "id": "none",
+   "cluster_name": "none"
 }
 ```
 → **Action: SAVE NEW**
@@ -320,55 +319,60 @@ You MUST check if an estimate already exists with the same **description (messag
 
 ### STEP 4A: UPDATE EXISTING ESTIMATE (when match found)
 
-You MUST call the action: **updateCostEstimate**
+Call the action: **updateCostEstimate**
 
 Construct the request with:
 
-**Path parameter:** 
-- `item_id`: from the matched historical record
+**Path parameter:**
+- `id`: from the matched historical record
 
-**Query parameter:** 
+**Query parameter:**
 - `cluster_name`: The cluster name from STEP 1
 
 **Request body:**
 ```json
 {
-  "item": {
-    "status": "approved",
-    "dateOfCreation": "<ISO-8601 UTC timestamp>",
-    "message": "<short human-readable description>",
-    "min_estimate": <Previous/Modified minimum estimate value>,
-    "max_estimate": <Previous/Modified maximum estimate value>
-  }
+   "item": {
+      "status": "approved",
+      "dateOfCreation": "<ISO-8601 UTC timestamp>",
+      "message": "<short human-readable description>",
+      "min_estimate": <Previous/Modified minimum estimate value>,
+      "max_estimate": <Previous/Modified maximum estimate value>
+   }
 }
 ```
 
-**IMPORTANT:** 
+**IMPORTANT:**
 - Only include fields that have changed or need updating
 - Use the **Modified** values if user negotiated changes, otherwise use **Previous approved** values
 - All fields are optional—provide only what needs to be updated
 
 ### STEP 4B: SAVE NEW ESTIMATE (when no match found)
 
-You MUST call the action: **saveCostEstimates**
+
+Call the action: **saveCostEstimates**
+
+**IMPORTANT:**
+You MUST include both `cluster_id` and `zipcode` in every item in the request body. Omitting either will result in a 422 error and the estimate will not be saved.
 
 Construct the request body:
 
 ```json
 {
-  "items": [
-    {
-      "status": "approved",
-      "thread_id": "<current conversation thread id>",
-      "dateOfCreation": "<ISO-8601 UTC timestamp>",
-      "type": "<home_repair | home_inspection>",
-      "message": "<short human-readable description>",
-      "currency": "USD",
-      "min_estimate": <Previous/Modified minimum estimate value>,
-      "max_estimate": <Previous/Modified maximum estimate value>,
-      "cluster_name": "<cluster name from STEP 1>"
-    }
-  ]
+   "items": [
+      {
+         "status": "approved",
+         "thread_id": "<current conversation thread id>",
+         "dateOfCreation": "<ISO-8601 UTC timestamp>",
+         "type": "<home_repair | home_inspection>",
+         "message": "<short human-readable description>",
+         "currency": "USD",
+         "min_estimate": <Previous/Modified minimum estimate value>,
+         "max_estimate": <Previous/Modified maximum estimate value>,
+         "zipcode": "<zipcode from user input>",
+         "cluster_id": "<cluster_id from getClusterByZipcode>"
+      }
+   ]
 }
 ```
 
@@ -377,10 +381,12 @@ Construct the request body:
 - `message` should NOT include the zipcode, city name, or state
 - `message` should NOT include the cluster name
 - `message` should be consistent with what was used to query historicalData agent
-- `cluster_name` is the value from **getClusterByZipcode** API (or empty string if no cluster)
+- `cluster_id` is the value from **getClusterByZipcode** API (or empty string if no cluster)
+- `zipcode` is the user's input
+- **Both `cluster_id` and `zipcode` are required.**
 - Use **Modified** values if user negotiated, otherwise use **Previous approved** values
-- This creates ONE database record indexed by `message` + `cluster_name`
-- Do not return any sources , references and citations information in the result.
+- This creates ONE database record indexed by `message` + `cluster_id`
+- Do not return any sources, references, or citations information in the result.
 
 ### STEP 5: CONFIRM TO USER
 

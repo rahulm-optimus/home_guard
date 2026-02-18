@@ -46,19 +46,19 @@ def print_test_header(number: str, text: str):
 
 def print_success(text: str):
     """Print success message"""
-    print(f"{Colors.GREEN}✅ {text}{Colors.RESET}")
+    print(f"{Colors.GREEN}SUCCESS: {text}{Colors.RESET}")
 
 def print_failure(text: str):
     """Print failure message"""
-    print(f"{Colors.RED}❌ {text}{Colors.RESET}")
+    print(f"{Colors.RED}FAILURE: {text}{Colors.RESET}")
 
 def print_info(text: str):
     """Print info message"""
-    print(f"{Colors.BLUE}ℹ️  {text}{Colors.RESET}")
+    print(f"{Colors.BLUE}INFO: {text}{Colors.RESET}")
 
 def print_warning(text: str):
     """Print warning message"""
-    print(f"{Colors.YELLOW}⚠️  {text}{Colors.RESET}")
+    print(f"{Colors.YELLOW}WARNING: {text}{Colors.RESET}")
 
 def print_json(data: Any, indent: int = 2):
     """Print JSON data with formatting"""
@@ -298,10 +298,10 @@ def print_summary():
     print(f"  Total:    {test_results['passed'] + test_results['failed']}")
     
     if test_results['failed'] == 0:
-        print(f"\n{Colors.GREEN}🎉 All tests passed!{Colors.RESET}")
+        print(f"\n{Colors.GREEN}All tests passed!{Colors.RESET}")
         return 0
     else:
-        print(f"\n{Colors.YELLOW}⚠️  Some tests failed. Review the output above for details.{Colors.RESET}")
+        print(f"\n{Colors.YELLOW}Some tests failed. Review the output above for details.{Colors.RESET}")
         return 1
 
 def main():

@@ -204,13 +204,13 @@ class CosmosDBService:
                     if results:
                         existing_item = results[0]
                         cluster_name_str = existing_item.get("cluster_name", "")
-                        logging.info(f"[COSMOS UPDATE] ✅ Found existing item {item_id_str}")
+                        logging.info(f"[COSMOS UPDATE] Found existing item {item_id_str}")
                         logging.info(f"[COSMOS UPDATE] Existing item cluster_name='{cluster_name_str}'")
                         logging.info(f"[COSMOS UPDATE] Existing item data: {existing_item}")
                     else:
-                        logging.warning(f"[COSMOS UPDATE] ❌ Item {item_id_str} not found in query results - will create new item")
+                        logging.warning(f"[COSMOS UPDATE] Item {item_id_str} not found in query results - will create new item")
                 except Exception as query_err:
-                    logging.error(f"[COSMOS UPDATE] ❌ Query failed for item {item_id_str}: {query_err}")
+                    logging.error(f"[COSMOS UPDATE] Query failed for item {item_id_str}: {query_err}")
                     import traceback
                     logging.error(f"Full exception: {traceback.format_exc()}")
                     # If query fails, try to create new item with the cluster_name from updates
@@ -225,13 +225,13 @@ class CosmosDBService:
                         item=item_id_str,
                         partition_key=cluster_name_str
                     )
-                    logging.info(f"[COSMOS UPDATE] ✅ Successfully read item {item_id_str} with cluster_name='{cluster_name_str}'")
+                    logging.info(f"[COSMOS UPDATE] Successfully read item {item_id_str} with cluster_name='{cluster_name_str}'")
                     logging.info(f"[COSMOS UPDATE] Read item data: {existing_item}")
                 except exceptions.CosmosResourceNotFoundError:
-                    logging.warning(f"[COSMOS UPDATE] ❌ Item {item_id_str} not found with read_item (cluster_name='{cluster_name_str}') - will create new")
+                    logging.warning(f"[COSMOS UPDATE] Item {item_id_str} not found with read_item (cluster_name='{cluster_name_str}') - will create new")
                     existing_item = None
                 except Exception as read_err:
-                    logging.error(f"[COSMOS UPDATE] ❌ read_item failed: {read_err}")
+                    logging.error(f"[COSMOS UPDATE] read_item failed: {read_err}")
                     import traceback
                     logging.error(f"Full exception: {traceback.format_exc()}")
                     existing_item = None
@@ -281,19 +281,19 @@ class CosmosDBService:
                         body=existing_item,
                         if_match=etag  # Only update if etag matches (no concurrent modifications)
                     )
-                    logging.info(f"[COSMOS UPDATE] ✅ Successfully updated item {item_id_str} with etag concurrency control")
+                    logging.info(f"[COSMOS UPDATE] Successfully updated item {item_id_str} with etag concurrency control")
                     logging.info(f"[COSMOS UPDATE] Updated item result: {result}")
                     return True
                 except exceptions.CosmosHttpResponseError as ce:
                     if ce.status_code == 412:  # Precondition failed (etag mismatch)
-                        logging.warning(f"[COSMOS UPDATE] ⚠️ Concurrent modification detected (412), retrying without etag...")
+                        logging.warning(f"[COSMOS UPDATE] Concurrent modification detected (412), retrying without etag...")
                         # Retry once without etag (force update)
                         result = self.container.upsert_item(body=existing_item)
-                        logging.info(f"[COSMOS UPDATE] ✅ Updated item {item_id_str} on retry")
+                        logging.info(f"[COSMOS UPDATE] Updated item {item_id_str} on retry")
                         logging.info(f"[COSMOS UPDATE] Retry result: {result}")
                         return True
                     else:
-                        logging.error(f"[COSMOS UPDATE] ❌ Upsert failed with status {ce.status_code}: {ce}")
+                        logging.error(f"[COSMOS UPDATE] Upsert failed with status {ce.status_code}: {ce}")
                         raise
             else:
                 # Item doesn't exist, so create it with all required fields
@@ -323,7 +323,7 @@ class CosmosDBService:
                 logging.info(f"[COSMOS UPDATE] New item to create: {new_item}")
                 
                 result = self.container.upsert_item(body=new_item)
-                logging.info(f"[COSMOS UPDATE] ✅ Created new item {item_id_str}")
+                logging.info(f"[COSMOS UPDATE] Created new item {item_id_str}")
                 logging.info(f"[COSMOS UPDATE] Create result: {result}")
                 return True
 

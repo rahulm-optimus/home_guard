@@ -533,6 +533,8 @@ def update_item(req: func.HttpRequest) -> func.HttpResponse:
             existing_item.pop(field, None)
         
         update_data = request_model.item.dict(exclude_unset=True)
+        update_data.pop("message", None)
+        update_data.pop("finding_text", None)
         for key, value in update_data.items():
             if value is not None:
                 existing_item[key] = value

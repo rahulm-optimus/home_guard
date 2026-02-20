@@ -9,28 +9,23 @@ import {
   Alert,
   IconButton,
   Grid,
-  Button,
   Stack,
   Divider,
   TablePagination,
   TextField,
   InputAdornment,
-  Snackbar,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
-  Edit as EditIcon,
 } from '@mui/icons-material';
 import { estimateService } from '../services/estimate.service';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import Tooltip from '@mui/material/Tooltip';
-import EditItemDialog, { EditItemFormData } from '../components/EditItemDialog';
 
 
 const SavedItems: React.FC = () => {
-  const [items, setItems] = useState<any[]>([]);
   const [groupedItems, setGroupedItems] = useState<any[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(0);
@@ -39,9 +34,6 @@ const SavedItems: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<any | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Debouncing effect for search
   useEffect(() => {
@@ -69,7 +61,6 @@ const SavedItems: React.FC = () => {
         // Get all items if no search query
         response = await estimateService.getItems(page * rowsPerPage, rowsPerPage);
       }
-      setItems(response.data.items);
       setTotalCount(response.data.total_count);
       
       // Group items by cluster_name and message
@@ -93,6 +84,7 @@ const SavedItems: React.FC = () => {
       if (!groups[key]) {
         groups[key] = {
           cluster_name: item.cluster_name || 'Unknown',
+          rule: item.Rule || item.rule || null,
           message: item.message,
           status: item.status,
           type: item.type,
@@ -109,6 +101,9 @@ const SavedItems: React.FC = () => {
         if (!groups[key].zipcodes.includes(item.zipcode)) {
           groups[key].zipcodes.push(item.zipcode);
         }
+        if (!groups[key].rule && (item.Rule || item.rule)) {
+          groups[key].rule = item.Rule || item.rule;
+        }
         groups[key].items.push(item);
       }
     });
@@ -122,29 +117,6 @@ const SavedItems: React.FC = () => {
 
   const handleClearSearch = () => {
     setSearchQuery('');
-  };
-
-  const handleEditClick = (item: any) => {
-    setSelectedItem(item);
-    setEditDialogOpen(true);
-  };
-
-  const handleEditSubmit = async (formData: EditItemFormData) => {
-    if (!selectedItem) return;
-
-    try {
-      await estimateService.updateItem(
-        selectedItem.id,
-        selectedItem.cluster_name || 'Unknown',
-        selectedItem.zipcode || selectedItem.zipcodes?.[0] || '',
-        { item: formData }
-      );
-      setSuccessMessage('Cost Estimate updated successfully');
-      setEditDialogOpen(false);
-      fetchItems(); // Refresh the list
-    } catch (err: any) {
-      throw err; // Let the dialog handle the error
-    }
   };
 
   // const getStatusColor = (status: string) => {
@@ -289,7 +261,7 @@ const SavedItems: React.FC = () => {
               <CardContent>
                 <Grid container spacing={2} alignItems="center">
                   {/* Message / Description */}
-                  <Grid item xs={12} md={7}>
+                  <Grid item xs={12}>
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
                       <Typography
                         variant="subtitle1"
@@ -322,24 +294,6 @@ const SavedItems: React.FC = () => {
                       />
                     </Stack>
                   </Grid>
-
-                  {/* Actions */}
-                  <Grid
-                    item
-                    xs={12}
-                    md={5}
-                    sx={{ textAlign: { xs: 'left', md: 'right' } }}
-                  >
-                    <Button
-                      variant="outlined"
-                      color="primary"
-                      size="small"
-                      startIcon={<EditIcon />}
-                      onClick={() => handleEditClick(group.items[0])}
-                    >
-                      Edit
-                    </Button>
-                  </Grid>
                 </Grid>
 
                 <Divider sx={{ my: 2 }} />
@@ -356,6 +310,15 @@ const SavedItems: React.FC = () => {
                     color="primary"
                     sx={{ fontWeight: 600 }}
                   />
+                  {group.rule && (
+                    <Chip
+                      label={`Rule: ${group.rule}`}
+                      variant="outlined"
+                      size="small"
+                      color="primary"
+                      sx={{ fontWeight: 600 }}
+                    />
+                  )}
                 </Stack>
               </CardContent>
             </Card>
@@ -395,26 +358,6 @@ const SavedItems: React.FC = () => {
           </Typography>
         </Box>
       )}
-
-      {/* Edit Dialog */}
-      <EditItemDialog
-        open={editDialogOpen}
-        onClose={() => setEditDialogOpen(false)}
-        onSubmit={handleEditSubmit}
-        editData={selectedItem}
-      />
-
-      {/* Success Snackbar */}
-      <Snackbar
-        open={!!successMessage}
-        autoHideDuration={4000}
-        onClose={() => setSuccessMessage(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity="success" onClose={() => setSuccessMessage(null)} sx={{ width: '100%' }}>
-          {successMessage}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 };
